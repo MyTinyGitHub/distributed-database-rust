@@ -1,0 +1,12 @@
+# Build artifacts
+/target/
+Cargo.lock
+
+# Data directories (regenerated at runtime)
+/data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

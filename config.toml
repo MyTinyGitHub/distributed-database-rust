@@ -1,0 +1,4 @@
+[storage]
+config_directory = "./data/config"
+wal_directory = "./data/wal"
+sst_directory = "./data/sst"

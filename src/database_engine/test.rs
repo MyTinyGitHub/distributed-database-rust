@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use crate::database_engine::{
     database_engine_errors::DatabaseEngineError,
-    wal::{WalOperation, read_wal, write_wal},
+    wal::{read_wal, write_wal, WalOperation},
 };
 
 #[test]
