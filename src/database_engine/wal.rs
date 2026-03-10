@@ -1,13 +1,21 @@
-use std::io::{Read, Write};
+use std::{
+    fs::OpenOptions,
+    io::{Read, Write},
+    sync::Arc,
+};
 
+use hmac_sha256::HMAC;
 use serde::{Deserialize, Serialize};
 
-use crate::database_engine::database_engine_errors::DatabaseEngineError;
+use crate::{
+    config::StorageConfig,
+    database_engine::{database_engine_errors::DatabaseEngineError, manifest::Manifest},
+};
 
 #[derive(Serialize, Deserialize)]
 struct WalRecord {
     pub version: u8,
-    pub check_sum: [u8; 16],
+    pub check_sum: [u8; 32],
     pub data: WalRecordData,
 }
 
@@ -25,19 +33,91 @@ pub struct WalRecordData {
     pub operation: WalOperation,
 }
 
-impl WalRecordData {
-    pub fn generate_checksum(&self) -> [u8; 16] {
-        let mut context = md5::Context::new();
+pub struct WalWriter {
+    pub config: StorageConfig,
+    pub manifest: Arc<Manifest>,
+}
 
-        context.consume(&self.key);
-        context.consume(&self.value);
-        context.consume([self.operation as u8]);
+pub struct WalReader {
+    pub config: StorageConfig,
+    pub manifest: Arc<Manifest>,
+}
 
-        context.finalize().into()
+impl WalReader {
+    pub fn new(storage_config: &StorageConfig, manifest: &Arc<Manifest>) -> Self {
+        Self {
+            config: storage_config.clone(),
+            manifest: Arc::clone(manifest),
+        }
+    }
+
+    pub fn read(&self) -> Result<Vec<WalRecordData>, DatabaseEngineError> {
+        let file_path = format!(
+            "{}/{}.wal",
+            &self.config.wal_directory, self.manifest.wal_manifest.active_idx
+        );
+
+        let mut reader = OpenOptions::new()
+            .read(true)
+            .open(file_path)
+            .map_err(|_| DatabaseEngineError::Wal("Unable to open WAL file".to_owned()))?;
+
+        let hmac_key = &self.manifest.wal_manifest.hmac_key;
+
+        read_wal(&mut reader, hmac_key)
     }
 }
 
-pub fn read_wal<R: Read>(reader: &mut R) -> Result<Vec<WalRecordData>, DatabaseEngineError> {
+impl WalWriter {
+    pub fn new(storage_config: &StorageConfig, manifest: &Arc<Manifest>) -> Self {
+        Self {
+            config: storage_config.clone(),
+            manifest: Arc::clone(manifest),
+        }
+    }
+
+    pub fn write(
+        &self,
+        operation: WalOperation,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<(), DatabaseEngineError> {
+        let file_path = format!(
+            "{}/{}.wal",
+            &self.config.wal_directory, self.manifest.wal_manifest.active_idx
+        );
+
+        let mut writer = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(file_path)
+            .map_err(|_| DatabaseEngineError::Wal("Unable to open file".to_owned()))?;
+
+        let hmac_key = &self.manifest.wal_manifest.hmac_key;
+
+        write_wal(&mut writer, hmac_key, operation, key, value)?;
+
+        Ok(())
+    }
+}
+
+impl WalRecordData {
+    pub fn generate_checksum(&self, hmac_key: &[u8]) -> [u8; 32] {
+        let mut context = HMAC::new(hmac_key);
+
+        context.update(&self.key);
+        context.update(&self.value);
+        context.update([self.operation as u8]);
+
+        context.finalize()
+    }
+}
+
+pub fn read_wal<R: Read>(
+    reader: &mut R,
+    hmac_key: &[u8],
+) -> Result<Vec<WalRecordData>, DatabaseEngineError> {
     let mut records = Vec::new();
 
     loop {
@@ -59,7 +139,7 @@ pub fn read_wal<R: Read>(reader: &mut R) -> Result<Vec<WalRecordData>, DatabaseE
         let record: WalRecord =
             bincode::deserialize(&payload).expect("Failed to deserialize WalRecord");
 
-        if record.check_sum != record.data.generate_checksum() {
+        if record.check_sum != record.data.generate_checksum(hmac_key) {
             return Err(DatabaseEngineError::Wal("invalid check_sum".to_owned()));
         }
 
@@ -71,6 +151,7 @@ pub fn read_wal<R: Read>(reader: &mut R) -> Result<Vec<WalRecordData>, DatabaseE
 
 pub fn write_wal<W: Write>(
     writer: &mut W,
+    hmac_key: &[u8],
     operation: WalOperation,
     key: Vec<u8>,
     value: Vec<u8>,
@@ -83,7 +164,7 @@ pub fn write_wal<W: Write>(
 
     let wal_record = WalRecord {
         version: 1,
-        check_sum: wal_record_data.generate_checksum(),
+        check_sum: wal_record_data.generate_checksum(hmac_key),
         data: wal_record_data,
     };
 

@@ -15,11 +15,11 @@ pub fn test_wal() -> Result<(), DatabaseEngineError> {
         let key = bincode::serialize(key).unwrap();
         let value = bincode::serialize(value).unwrap();
 
-        write_wal(&mut cursor, WalOperation::Update, key, value)?;
+        write_wal(&mut cursor, &[1], WalOperation::Update, key, value)?;
     }
 
     cursor.set_position(0);
-    let read = read_wal(&mut cursor)?;
+    let read = read_wal(&mut cursor, &[1])?;
 
     assert_eq!(read.len(), inputs.len());
 
