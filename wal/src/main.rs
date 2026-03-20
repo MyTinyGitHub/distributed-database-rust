@@ -4,7 +4,7 @@ use proto::wal_server::Wal;
 
 use tonic::transport::Server;
 use tonic_reflection::server::Builder;
-use wal::{Config, Manifest, WalWriter};
+use wal::{Config, Manifest, WalOperation, WalWriter};
 
 pub mod proto {
     tonic::include_proto!("wal");
@@ -30,11 +30,12 @@ impl Wal for WalService {
 
         let request = request.get_ref();
 
-        self.writer.write(
-            wal::WalOperation::Update,
-            request.key.clone(),
-            request.value.clone(),
-        );
+        let op =
+            WalOperation::try_from(request.operation).map_err(tonic::Status::invalid_argument)?;
+
+        let _ = self
+            .writer
+            .write(op, request.key.clone(), request.value.clone());
 
         Ok(tonic::Response::new(proto::WalResponse {}))
     }

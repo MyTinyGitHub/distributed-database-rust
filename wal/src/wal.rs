@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{config::StorageConfig, manifest::Manifest};
 
+pub mod proto {
+    tonic::include_proto!("wal");
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum WalError {
     #[error("WAL error: {0}")]
