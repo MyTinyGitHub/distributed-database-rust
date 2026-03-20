@@ -11,7 +11,6 @@ pub struct Config {
 pub struct StorageConfig {
     pub config_directory: String,
     pub wal_directory: String,
-    pub sst_directory: String,
 }
 
 impl Config {
