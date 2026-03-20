@@ -1,38 +1,66 @@
 use std::sync::Arc;
 
-use wal::{Config, Manifest, WalOperation, WalReader, WalWriter};
+use proto::wal_server::Wal;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+use tonic::transport::Server;
+use tonic_reflection::server::Builder;
+use wal::{Config, Manifest, WalWriter};
+
+pub mod proto {
+    tonic::include_proto!("wal");
+}
+
+struct WalService {
+    writer: WalWriter,
+}
+
+impl WalService {
+    pub fn new(writer: WalWriter) -> Self {
+        Self { writer }
+    }
+}
+
+#[async_trait::async_trait]
+impl Wal for WalService {
+    async fn write(
+        &self,
+        request: tonic::Request<proto::WalRequest>,
+    ) -> Result<tonic::Response<proto::WalResponse>, tonic::Status> {
+        println!("Got a request: {:?}", request);
+
+        let request = request.get_ref();
+
+        self.writer.write(
+            wal::WalOperation::Update,
+            request.key.clone(),
+            request.value.clone(),
+        );
+
+        Ok(tonic::Response::new(proto::WalResponse {}))
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(Config::load("config.toml")?);
-
-    println!("Config directory: {}", config.storage.config_directory);
-    println!("WAL directory: {}", config.storage.wal_directory);
-    println!("SST directory: {}", config.storage.sst_directory);
-
     let manifest = Arc::new(Manifest::load(&config.storage)?);
 
-    println!("Manifest version: {}", manifest.version);
-    println!("Active WAL index: {}", manifest.wal_manifest.active_idx);
-    println!("HMAC key: {:x?}", &manifest.wal_manifest.hmac_key[..8]);
-
     let wal_writer = WalWriter::new(&config.storage, &manifest);
-    let wal_reader = WalReader::new(&config.storage, &manifest);
 
-    wal_writer.write(
-        WalOperation::Update,
-        bincode::serialize("test-key")?,
-        bincode::serialize("test-value")?,
-    )?;
+    let addr = "[::1]:50051".parse()?;
+    let wal = proto::wal_server::WalServer::new(WalService::new(wal_writer));
+    let reflection = Builder::configure()
+        .register_encoded_file_descriptor_set(include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "/wal_descriptor.bin"
+        )))
+        .build_v1()?;
 
-    let values = wal_reader.read()?;
-    for value in values {
-        let deserialized_key: String = bincode::deserialize(&value.key)?;
-        let deserialized_value: String = bincode::deserialize(&value.value)?;
-
-        println!("{}:{}", deserialized_key, deserialized_value);
-    }
-
-    println!("WAL write successful!");
+    Server::builder()
+        .add_service(wal)
+        .add_service(reflection)
+        .serve(addr)
+        .await?;
 
     Ok(())
 }

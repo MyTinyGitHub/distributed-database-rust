@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package wal;
+
+service Wal {
+  rpc Write(WalRequest) returns (WalResponse);
+}
+
+message WalRequest {
+  WalOperation operation = 1;
+  bytes key             = 2;
+  bytes value           = 3;
+}
+
+enum WalOperation {
+  WAL_OPERATION_UNSPECIFIED = 0; // proto3 requires a zero-value default
+  WAL_OPERATION_PUT         = 1;
+  WAL_OPERATION_DELETE      = 2;
+}
+
+message WalResponse {}
+
