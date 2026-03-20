@@ -1,77 +1,121 @@
-# Homelab Monorepo
+# Homelab Database
 
-A personal monorepo containing a distributed database engine built from scratch in Rust, a language interpreter, and supporting homelab infrastructure.
+A distributed database engine built from scratch in Rust with an LSM tree storage engine.
 
 ---
 
-## Projects
+## Implementation Status
 
-### 🗄️ Distributed Database Engine
-A distributed database engine built from scratch in Rust. Accepts SQL queries, plans and executes them across distributed partition nodes, and stores data using an LSM tree storage engine.
+| Component | Status | Description |
+|-----------|--------|-------------|
+| `common` | ✅ Done | Shared types, errors, serialization, protobuf definitions |
+| `wal` | ✅ Done | Write-Ahead Log with HMAC checksums, manifest management |
+| `storage` | 🔨 In Progress | Partition node, MemTable, SSTable, LSM tree |
+| `query` | 🔨 In Progress | SQL parser, lexer, logical/physical planning |
+| `join` | 🔨 In Progress | Streaming join execution module |
 
-- Shared-nothing architecture with hash-based partitioning
-- Custom SQL subset parser and query planner
-- LSM tree storage engine with WAL-first writes
-- Streaming join execution
+---
 
-→ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full design documentation
+## Architecture
 
-### 🔤 Interpreter
-An interpreter for the Monkey language built in Rust, following "Writing an Interpreter in Go". Foundation for the database query language frontend.
+```
+┌──────────────────────────────────────────────────────────────┐
+│                         query                                 │
+│                   (SQL → logical plan)                       │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                       coordinator                             │
+│          (physical planning → execution → catalog)          │
+│                         join                                  │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌────────────┐  ┌────────────┐  ┌────────────┐
+│ partition  │  │ partition  │  │ partition  │
+│   node 1   │  │   node 2   │  │   node 3   │
+│ WAL        │  │ WAL        │  │ WAL        │
+│ MemTable   │  │ MemTable   │  │ MemTable   │
+│ SSTable    │  │ SSTable    │  │ SSTable    │
+└────────────┘  └────────────┘  └────────────┘
+```
 
-→ See [interpreter/README.md](./interpreter/README.md)
+### Layers
+
+- **query** — SQL parsing, lexing, logical query planning
+- **coordinator** — Physical planner, executor, catalog, join orchestration
+- **storage** — Partition nodes: WAL → MemTable → SSTable (LSM tree)
+
+### Key Design Decisions
+
+- **Shared-nothing architecture** — Partition nodes are fully autonomous
+- **Hash-based partitioning** — Prevents hotspots under uniform write load
+- **WAL-first writes** — WAL persisted before any mutation is acknowledged
+- **Fail fast** — Errors surface immediately, bounded retry with circuit breakers
+- **Stateless join module** — Streams chunks, never buffers full datasets
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for full design documentation.
 
 ---
 
 ## Repository Structure
 
 ```
-monorepo/
-├── gateway/              # SQL parser, lexer, CLI interface
-├── coordinator/          # Executor, planners, catalog, join module
-├── storage-engine/       # Partition node, WAL, MemTable, LSM Tree
-├── interpreter/          # Monkey language interpreter in Rust
-├── .opencode/
-│   └── agents/           # AI code review and architecture agents
-├── docs/
-│   └── adr/              # Architecture Decision Records
-├── ARCHITECTURE.md       # Full system architecture
-└── CONTRIBUTING.md       # Development guidelines and rules
+.
+├── common/              # Shared types, errors, serialization, proto
+├── wal/                 # Write-Ahead Log implementation
+│   ├── src/
+│   │   ├── config.rs    # Storage configuration
+│   │   ├── errors.rs    # WAL error types
+│   │   ├── lib.rs       # Public API
+│   │   ├── manifest.rs  # WAL manifest (active segment, HMAC key)
+│   │   └── wal.rs       # WAL reader/writer with HMAC checksums
+│   └── data/            # WAL segment files
+├── storage/             # Partition node (WIP)
+├── query/               # Query gateway (WIP)
+├── join/                # Join module (WIP)
+└── docs/
+    └── adr/             # Architecture Decision Records
 ```
 
 ---
 
-## Getting Started
+## Building
 
 ```bash
-# Run all tests
-just test
+# Build all crates
+cargo build --workspace
 
-# Check everything (fmt + lint + test)
-just check
+# Build specific crate
+cargo build -p wal
+cargo build -p common
 
-# Generate and open documentation
-just doc
+# Run tests
+cargo test --workspace
 
-# Sync to public GitHub
-just sync
+# Check formatting and linting
+cargo fmt --check
+cargo clippy --workspace
 ```
 
 ---
 
-## Infrastructure
+## ADRs
 
-- Self-hosted Gitea as source of truth
-- Automatic sync to public GitHub via git subtree
-- Netbird VPN for remote access to homelab
-- Reverse proxy for external access
+| ID | Title |
+|----|-------|
+| ADR-001 | Shared-nothing architecture |
+| ADR-002 | Hash-based partitioning |
+| ADR-003 | Logical/physical planning split |
+| ADR-004 | WAL-first writes |
+| ADR-005 | Stateless join module |
+| ADR-006 | Fail fast with circuit breakers |
 
 ---
 
 ## Tech Stack
 
 - **Language:** Rust
-- **Task runner:** just
-- **Version control:** Gitea (self-hosted) + GitHub (public mirror)
-- **VPN:** Netbird
-- **OS:** Arch Linux
+- **Serialization:** bincode, protobuf (tonic-build)
+- **Crypto:** hmac-sha256 for WAL integrity
