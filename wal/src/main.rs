@@ -1,15 +1,6 @@
-mod config;
-mod coordinator;
-mod database_engine;
-mod gateway;
-
 use std::sync::Arc;
 
-use config::Config;
-use database_engine::manifest::Manifest;
-use database_engine::wal::WalOperation;
-
-use crate::database_engine::wal::{WalReader, WalWriter};
+use wal::{Config, Manifest, WalOperation, WalReader, WalWriter};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(Config::load("config.toml")?);
@@ -18,7 +9,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("WAL directory: {}", config.storage.wal_directory);
     println!("SST directory: {}", config.storage.sst_directory);
 
-    // Load or create manifest
     let manifest = Arc::new(Manifest::load(&config.storage)?);
 
     println!("Manifest version: {}", manifest.version);
@@ -36,8 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let values = wal_reader.read()?;
     for value in values {
-        let deserialized_key: String = bincode::deserialize(&value.key).unwrap();
-        let deserialized_value: String = bincode::deserialize(&value.value).unwrap();
+        let deserialized_key: String = bincode::deserialize(&value.key)?;
+        let deserialized_value: String = bincode::deserialize(&value.value)?;
 
         println!("{}:{}", deserialized_key, deserialized_value);
     }

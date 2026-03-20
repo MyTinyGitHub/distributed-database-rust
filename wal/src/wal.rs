@@ -1,19 +1,33 @@
 use std::{
     fs::OpenOptions,
     io::{Read, Write},
-    sync::Arc,
 };
 
 use hmac_sha256::HMAC;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::StorageConfig,
-    database_engine::{database_engine_errors::DatabaseEngineError, manifest::Manifest},
-};
+use crate::{config::StorageConfig, manifest::Manifest};
+
+#[derive(Debug, thiserror::Error)]
+pub enum WalError {
+    #[error("WAL error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    #[error("Invalid checksum")]
+    InvalidChecksum,
+}
+
+impl From<bincode::Error> for WalError {
+    fn from(e: bincode::Error) -> Self {
+        WalError::Serialization(e.to_string())
+    }
+}
 
 #[derive(Serialize, Deserialize)]
-struct WalRecord {
+pub struct WalRecord {
     pub version: u8,
     pub check_sum: [u8; 32],
     pub data: WalRecordData,
@@ -35,32 +49,29 @@ pub struct WalRecordData {
 
 pub struct WalWriter {
     pub config: StorageConfig,
-    pub manifest: Arc<Manifest>,
+    pub manifest: std::sync::Arc<Manifest>,
 }
 
 pub struct WalReader {
     pub config: StorageConfig,
-    pub manifest: Arc<Manifest>,
+    pub manifest: std::sync::Arc<Manifest>,
 }
 
 impl WalReader {
-    pub fn new(storage_config: &StorageConfig, manifest: &Arc<Manifest>) -> Self {
+    pub fn new(storage_config: &StorageConfig, manifest: &std::sync::Arc<Manifest>) -> Self {
         Self {
             config: storage_config.clone(),
-            manifest: Arc::clone(manifest),
+            manifest: std::sync::Arc::clone(manifest),
         }
     }
 
-    pub fn read(&self) -> Result<Vec<WalRecordData>, DatabaseEngineError> {
+    pub fn read(&self) -> Result<Vec<WalRecordData>, WalError> {
         let file_path = format!(
             "{}/{}.wal",
             &self.config.wal_directory, self.manifest.wal_manifest.active_idx
         );
 
-        let mut reader = OpenOptions::new()
-            .read(true)
-            .open(file_path)
-            .map_err(|_| DatabaseEngineError::Wal("Unable to open WAL file".to_owned()))?;
+        let mut reader = OpenOptions::new().read(true).open(file_path)?;
 
         let hmac_key = &self.manifest.wal_manifest.hmac_key;
 
@@ -69,10 +80,10 @@ impl WalReader {
 }
 
 impl WalWriter {
-    pub fn new(storage_config: &StorageConfig, manifest: &Arc<Manifest>) -> Self {
+    pub fn new(storage_config: &StorageConfig, manifest: &std::sync::Arc<Manifest>) -> Self {
         Self {
             config: storage_config.clone(),
-            manifest: Arc::clone(manifest),
+            manifest: std::sync::Arc::clone(manifest),
         }
     }
 
@@ -81,7 +92,7 @@ impl WalWriter {
         operation: WalOperation,
         key: Vec<u8>,
         value: Vec<u8>,
-    ) -> Result<(), DatabaseEngineError> {
+    ) -> Result<(), WalError> {
         let file_path = format!(
             "{}/{}.wal",
             &self.config.wal_directory, self.manifest.wal_manifest.active_idx
@@ -91,8 +102,7 @@ impl WalWriter {
             .read(true)
             .append(true)
             .create(true)
-            .open(file_path)
-            .map_err(|_| DatabaseEngineError::Wal("Unable to open file".to_owned()))?;
+            .open(file_path)?;
 
         let hmac_key = &self.manifest.wal_manifest.hmac_key;
 
@@ -114,10 +124,7 @@ impl WalRecordData {
     }
 }
 
-pub fn read_wal<R: Read>(
-    reader: &mut R,
-    hmac_key: &[u8],
-) -> Result<Vec<WalRecordData>, DatabaseEngineError> {
+pub fn read_wal<R: Read>(reader: &mut R, hmac_key: &[u8]) -> Result<Vec<WalRecordData>, WalError> {
     let mut records = Vec::new();
 
     loop {
@@ -132,15 +139,12 @@ pub fn read_wal<R: Read>(
 
         let mut payload = vec![0u8; size];
 
-        reader
-            .read_exact(&mut payload)
-            .expect("Failed to read payload");
+        reader.read_exact(&mut payload)?;
 
-        let record: WalRecord =
-            bincode::deserialize(&payload).expect("Failed to deserialize WalRecord");
+        let record: WalRecord = bincode::deserialize(&payload)?;
 
         if record.check_sum != record.data.generate_checksum(hmac_key) {
-            return Err(DatabaseEngineError::Wal("invalid check_sum".to_owned()));
+            return Err(WalError::InvalidChecksum);
         }
 
         records.push(record.data);
@@ -155,7 +159,7 @@ pub fn write_wal<W: Write>(
     operation: WalOperation,
     key: Vec<u8>,
     value: Vec<u8>,
-) -> Result<(), DatabaseEngineError> {
+) -> Result<(), WalError> {
     let wal_record_data = WalRecordData {
         operation,
         key,
@@ -168,15 +172,11 @@ pub fn write_wal<W: Write>(
         data: wal_record_data,
     };
 
-    let bytes = bincode::serialize(&wal_record).expect("Unable to serialize WALRecord");
+    let bytes = bincode::serialize(&wal_record)?;
 
-    writer
-        .write_all(&(bytes.len() as u64).to_le_bytes())
-        .map_err(|_| DatabaseEngineError::Wal("Unable to persist length of payload".to_owned()))?;
+    writer.write_all(&(bytes.len() as u64).to_le_bytes())?;
 
-    writer
-        .write_all(&bytes)
-        .map_err(|_| DatabaseEngineError::Wal("Unable to persist the payload".to_owned()))?;
+    writer.write_all(&bytes)?;
 
     Ok(())
 }
