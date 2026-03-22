@@ -109,7 +109,6 @@ impl WalWriter {
         );
 
         let mut writer = OpenOptions::new()
-            .read(true)
             .append(true)
             .create(true)
             .open(file_path)?;
@@ -117,6 +116,8 @@ impl WalWriter {
         let hmac_key = &self.manifest.wal_manifest.hmac_key;
 
         write_wal(&mut writer, hmac_key, operation, key, value)?;
+
+        writer.flush()?;
 
         Ok(())
     }

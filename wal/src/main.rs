@@ -33,9 +33,9 @@ impl Wal for WalService {
         let op =
             WalOperation::try_from(request.operation).map_err(tonic::Status::invalid_argument)?;
 
-        let _ = self
-            .writer
-            .write(op, request.key.clone(), request.value.clone());
+        self.writer
+            .write(op, request.key.clone(), request.value.clone())
+            .map_err(|_| tonic::Status::internal(""))?;
 
         Ok(tonic::Response::new(proto::WalResponse {}))
     }
