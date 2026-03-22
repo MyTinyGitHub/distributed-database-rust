@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{error::Error, sync::Arc};
 
 use proto::wal_server::Wal;
 
@@ -42,8 +42,8 @@ impl Wal for WalService {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Arc::new(Config::load("config.toml")?);
+async fn main() -> Result<(), Box<dyn Error>> {
+    let config = Arc::new(Config::load("./wal/config.toml")?);
     let manifest = Arc::new(Manifest::load(&config.storage)?);
 
     let wal_writer = WalWriter::new(&config.storage, &manifest);
