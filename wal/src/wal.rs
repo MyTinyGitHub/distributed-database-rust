@@ -4,6 +4,7 @@ use std::{
 };
 
 use hmac_sha256::HMAC;
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::{config::StorageConfig, manifest::Manifest};
@@ -97,6 +98,11 @@ impl WalWriter {
         key: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), WalError> {
+        info!(
+            "writing: operation - {:?}, key - {:?}, value - {:?}",
+            operation, key, value
+        );
+
         let file_path = format!(
             "{}/{}.wal",
             &self.config.wal_directory, self.manifest.wal_manifest.active_idx
