@@ -4,7 +4,9 @@ use proto::wal_server::Wal;
 
 use tonic::transport::Server;
 use tonic_reflection::server::Builder;
-use wal::{Config, Manifest, WalOperation, WalWriter};
+use wal::{Config, Manifest, WalOperation, WalReader, WalWriter};
+
+use crate::proto::WalReadDto;
 
 pub mod proto {
     tonic::include_proto!("wal");
@@ -12,11 +14,12 @@ pub mod proto {
 
 struct WalService {
     writer: WalWriter,
+    reader: WalReader,
 }
 
 impl WalService {
-    pub fn new(writer: WalWriter) -> Self {
-        Self { writer }
+    pub fn new(writer: WalWriter, reader: WalReader) -> Self {
+        Self { writer, reader }
     }
 }
 
@@ -24,8 +27,8 @@ impl WalService {
 impl Wal for WalService {
     async fn write(
         &self,
-        request: tonic::Request<proto::WalRequest>,
-    ) -> Result<tonic::Response<proto::WalResponse>, tonic::Status> {
+        request: tonic::Request<proto::WalEntryDto>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
         println!("Got a request: {:?}", request);
 
         let request = request.get_ref();
@@ -37,7 +40,28 @@ impl Wal for WalService {
             .write(op, request.key.clone(), request.value.clone())
             .map_err(|_| tonic::Status::internal(""))?;
 
-        Ok(tonic::Response::new(proto::WalResponse {}))
+        Ok(tonic::Response::new(()))
+    }
+
+    async fn read(
+        &self,
+        _: tonic::Request<()>,
+    ) -> Result<tonic::Response<proto::WalReadDto>, tonic::Status> {
+        let result = self
+            .reader
+            .read()
+            .map_err(|_| tonic::Status::internal(""))?;
+
+        let result = result
+            .iter()
+            .map(|r| proto::WalEntryDto {
+                key: r.key.clone(),
+                value: r.value.clone(),
+                operation: r.operation as i32,
+            })
+            .collect::<Vec<_>>();
+
+        Ok(tonic::Response::new(WalReadDto { entries: result }))
     }
 }
 
@@ -49,9 +73,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let manifest = Arc::new(Manifest::load(&config.storage)?);
 
     let wal_writer = WalWriter::new(&config.storage, &manifest);
+    let wal_reader = WalReader::new(&config.storage, &manifest);
+    let wal_service = WalService::new(wal_writer, wal_reader);
 
     let addr = "[::1]:50051".parse()?;
-    let wal = proto::wal_server::WalServer::new(WalService::new(wal_writer));
+    let wal = proto::wal_server::WalServer::new(wal_service);
     let reflection = Builder::configure()
         .register_encoded_file_descriptor_set(include_bytes!(concat!(
             env!("OUT_DIR"),

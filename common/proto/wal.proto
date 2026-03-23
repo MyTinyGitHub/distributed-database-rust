@@ -1,22 +1,26 @@
 syntax = "proto3";
 
+import "google/protobuf/empty.proto";
+
 package wal;
 
 service Wal {
-  rpc Write(WalRequest) returns (WalResponse);
+  rpc Write(WalEntryDTO) returns (google.protobuf.Empty);
+  rpc Read(google.protobuf.Empty) returns (WalReadDTO);
 }
 
-message WalRequest {
+message WalReadDTO {
+    repeated WalEntryDTO entries = 1;
+}
+
+message WalEntryDTO {
   WalOperation operation = 1;
   bytes key             = 2;
   bytes value           = 3;
 }
 
 enum WalOperation {
-  WAL_OPERATION_UNSPECIFIED = 0; // proto3 requires a zero-value default
+  WAL_OPERATION_UNSPECIFIED = 0;
   WAL_OPERATION_PUT         = 1;
   WAL_OPERATION_DELETE      = 2;
 }
-
-message WalResponse {}
-
