@@ -78,7 +78,7 @@ impl WalReader {
         let mut result: Vec<WalRecordData> = Vec::new();
 
         for file in wal_files {
-            let file_path = format!("{}/{}.wal", &self.config.wal_directory, file);
+            let file_path = format!("{}/{}", &self.config.wal_directory, file);
 
             info!("reading: from file {:?}", file_path);
 
@@ -102,7 +102,7 @@ impl WalWriter {
 
     pub async fn write(
         &self,
-        partition: &str,
+        partition_name: &str,
         operation: WalOperation,
         key: Vec<u8>,
         value: Vec<u8>,
@@ -114,11 +114,12 @@ impl WalWriter {
 
         let mut manifest = self.manifest.write().await;
 
-        let file_path = format!(
-            "{}/{}.wal",
-            &self.config.wal_directory,
-            manifest.wal_location(&partition)
-        );
+        manifest.wal_partition_init(&partition_name);
+        manifest.wal_maybe_increment(partition_name);
+
+        let file_name = manifest.wal_filename(partition_name);
+
+        let file_path = format!("{}/{}", &self.config.wal_directory, file_name);
 
         let mut writer = OpenOptions::new()
             .append(true)

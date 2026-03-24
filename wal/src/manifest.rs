@@ -7,6 +7,7 @@ use crate::config::StorageConfig;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub version: u8,
+    pub file_path: String,
     pub wal_manifest: WalManifest,
 }
 
@@ -28,8 +29,8 @@ impl Manifest {
     pub fn pending_file_location(&self, partition_name: &str) -> Vec<String> {
         let partition = &self.wal_manifest.partiton[partition_name];
 
-        let ack_file = partition.ack_idx / self.wal_manifest.max_size as u64 + 1;
-        let last_file = partition.last_idx / self.wal_manifest.max_size as u64 + 1;
+        let ack_file = partition.ack_idx / self.wal_manifest.max_size as u64;
+        let last_file = partition.last_idx / self.wal_manifest.max_size as u64;
 
         (ack_file as u32..=last_file as u32)
             .into_iter()
@@ -37,7 +38,7 @@ impl Manifest {
             .collect()
     }
 
-    pub fn wal_location(&mut self, partition_name: &str) -> String {
+    pub fn wal_partition_init(&mut self, partition_name: &str) {
         if self.wal_manifest.partiton.get(partition_name).is_none() {
             self.wal_manifest.partiton.insert(
                 partition_name.to_string(),
@@ -49,15 +50,22 @@ impl Manifest {
             );
         };
 
-        let partition = self.wal_manifest.partiton.get_mut(partition_name).unwrap();
+        let _ = self.save();
+    }
 
-        if partition.last_idx % self.wal_manifest.max_size as u64 == 0 {
-            partition.file_idx += 1;
-        }
+    pub fn wal_maybe_increment(&mut self, partition_name: &str) {
+        let partition = self.wal_manifest.partiton.get_mut(partition_name).unwrap();
 
         partition.last_idx += 1;
         partition.ack_idx += 1;
 
+        if partition.last_idx % self.wal_manifest.max_size as u64 == 0 {
+            partition.file_idx += 1;
+        }
+    }
+
+    pub fn wal_filename(&mut self, partition_name: &str) -> String {
+        let partition = self.wal_manifest.partiton.get_mut(partition_name).unwrap();
         format!("{}_{}.wal", partition_name, partition.file_idx)
     }
 
@@ -66,8 +74,8 @@ impl Manifest {
 
         if !path.exists() {
             // Generate new manifest with fresh HMAC key
-            let manifest = Manifest::new();
-            manifest.save(config)?;
+            let manifest = Manifest::new(&config.config_directory);
+            manifest.save()?;
             return Ok(manifest);
         }
 
@@ -77,8 +85,8 @@ impl Manifest {
         serde_json::from_str(&content).map_err(ManifestError::ParseError)
     }
 
-    pub fn save(&self, config: &StorageConfig) -> Result<(), ManifestError> {
-        let temp_path = Self::temp_manifest_path(config);
+    pub fn save(&self) -> Result<(), ManifestError> {
+        let temp_path = std::path::Path::new(&self.file_path).join("manifest.json.tmp");
 
         // Ensure directory exists
         if let Some(parent) = temp_path.parent() {
@@ -91,26 +99,23 @@ impl Manifest {
         fs::write(&temp_path, content)
             .map_err(|e| ManifestError::WriteError(temp_path.display().to_string(), e))?;
 
-        fs::rename(temp_path, Self::manifest_path(config))
-            .map_err(|e| ManifestError::WriteError("_".to_string(), e))?;
+        let path = std::path::Path::new(&self.file_path).join("manifest.json");
+        fs::rename(temp_path, path).map_err(|e| ManifestError::WriteError("_".to_string(), e))?;
 
         Ok(())
-    }
-
-    fn temp_manifest_path(config: &StorageConfig) -> std::path::PathBuf {
-        std::path::Path::new(&config.config_directory).join("manifest.json.temp")
     }
 
     fn manifest_path(config: &StorageConfig) -> std::path::PathBuf {
         std::path::Path::new(&config.config_directory).join("manifest.json")
     }
 
-    fn new() -> Self {
+    fn new(file_path: &str) -> Self {
         let mut hmac_key = [0u8; 32];
         rand::thread_rng().fill(&mut hmac_key);
 
         Manifest {
             version: 1,
+            file_path: file_path.to_owned(),
             wal_manifest: WalManifest {
                 hmac_key,
                 max_size: 10,
