@@ -1,34 +1,36 @@
 use std::{error::Error, sync::Arc};
 
-use proto::wal_server::Wal;
-
-use tonic::transport::Server;
+use tokio::sync::RwLock;
+use tonic::{transport::Server, Request, Response};
 use tonic_reflection::server::Builder;
 use wal::{Config, Manifest, WalOperation, WalReader, WalWriter};
 
-use crate::proto::WalReadDto;
+use crate::proto::{
+    wal_service_server::{WalService, WalServiceServer},
+    Entry, ReadRequest, ReadResponse, WriteResponse,
+};
 
 pub mod proto {
     tonic::include_proto!("wal");
 }
 
-struct WalService {
+struct WalSrv {
     writer: WalWriter,
     reader: WalReader,
 }
 
-impl WalService {
+impl WalSrv {
     pub fn new(writer: WalWriter, reader: WalReader) -> Self {
         Self { writer, reader }
     }
 }
 
 #[async_trait::async_trait]
-impl Wal for WalService {
+impl WalService for WalSrv {
     async fn write(
         &self,
-        request: tonic::Request<proto::WalEntryDto>,
-    ) -> Result<tonic::Response<()>, tonic::Status> {
+        request: Request<proto::WriteRequest>,
+    ) -> Result<Response<WriteResponse>, tonic::Status> {
         println!("Got a request: {:?}", request);
 
         let request = request.get_ref();
@@ -37,31 +39,38 @@ impl Wal for WalService {
             WalOperation::try_from(request.operation).map_err(tonic::Status::invalid_argument)?;
 
         self.writer
-            .write(op, request.key.clone(), request.value.clone())
+            .write(
+                &request.partition_name,
+                op,
+                request.key.clone(),
+                request.value.clone(),
+            )
+            .await
             .map_err(|_| tonic::Status::internal(""))?;
 
-        Ok(tonic::Response::new(()))
+        Ok(Response::new(WriteResponse {}))
     }
 
     async fn read(
         &self,
-        _: tonic::Request<()>,
-    ) -> Result<tonic::Response<proto::WalReadDto>, tonic::Status> {
+        request: Request<ReadRequest>,
+    ) -> Result<Response<ReadResponse>, tonic::Status> {
         let result = self
             .reader
-            .read()
+            .read(&request.get_ref().partition_name)
+            .await
             .map_err(|_| tonic::Status::internal(""))?;
 
         let result = result
             .iter()
-            .map(|r| proto::WalEntryDto {
+            .map(|r| Entry {
                 key: r.key.clone(),
                 value: r.value.clone(),
                 operation: r.operation as i32,
             })
             .collect::<Vec<_>>();
 
-        Ok(tonic::Response::new(WalReadDto { entries: result }))
+        Ok(Response::new(ReadResponse { entries: result }))
     }
 }
 
@@ -70,14 +79,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log4rs::init_file("log/config/log4rs.yaml", Default::default())?;
 
     let config = Arc::new(Config::load("wal/config.toml")?);
-    let manifest = Arc::new(Manifest::load(&config.storage)?);
+    let manifest = Arc::new(RwLock::new(Manifest::load(&config.storage)?));
 
     let wal_writer = WalWriter::new(&config.storage, &manifest);
     let wal_reader = WalReader::new(&config.storage, &manifest);
-    let wal_service = WalService::new(wal_writer, wal_reader);
+    let wal_service = WalSrv::new(wal_writer, wal_reader);
 
     let addr = "[::1]:50051".parse()?;
-    let wal = proto::wal_server::WalServer::new(wal_service);
+    let wal = WalServiceServer::new(wal_service);
     let reflection = Builder::configure()
         .register_encoded_file_descriptor_set(include_bytes!(concat!(
             env!("OUT_DIR"),

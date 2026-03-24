@@ -1,11 +1,13 @@
 use std::{
     fs::OpenOptions,
     io::{Read, Write},
+    sync::Arc,
 };
 
 use hmac_sha256::HMAC;
 use log::info;
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 
 use crate::{config::StorageConfig, manifest::Manifest};
 
@@ -54,46 +56,53 @@ pub struct WalRecordData {
 
 pub struct WalWriter {
     pub config: StorageConfig,
-    pub manifest: std::sync::Arc<Manifest>,
+    pub manifest: Arc<RwLock<Manifest>>,
 }
 
 pub struct WalReader {
     pub config: StorageConfig,
-    pub manifest: std::sync::Arc<Manifest>,
+    pub manifest: Arc<RwLock<Manifest>>,
 }
 
 impl WalReader {
-    pub fn new(storage_config: &StorageConfig, manifest: &std::sync::Arc<Manifest>) -> Self {
+    pub fn new(storage_config: &StorageConfig, manifest: &Arc<RwLock<Manifest>>) -> Self {
         Self {
             config: storage_config.clone(),
-            manifest: std::sync::Arc::clone(manifest),
+            manifest: Arc::clone(manifest),
         }
     }
 
-    pub fn read(&self) -> Result<Vec<WalRecordData>, WalError> {
-        let file_path = format!(
-            "{}/{}.wal",
-            &self.config.wal_directory, self.manifest.wal_manifest.active_idx
-        );
+    pub async fn read(&self, partition_name: &str) -> Result<Vec<WalRecordData>, WalError> {
+        let manifest = self.manifest.read().await;
+        let wal_files = manifest.pending_file_location(partition_name);
+        let mut result: Vec<WalRecordData> = Vec::new();
 
-        let mut reader = OpenOptions::new().read(true).open(file_path)?;
+        for file in wal_files {
+            let file_path = format!("{}/{}.wal", &self.config.wal_directory, file);
 
-        let hmac_key = &self.manifest.wal_manifest.hmac_key;
+            info!("reading: from file {:?}", file_path);
 
-        read_wal(&mut reader, hmac_key)
+            let mut reader = OpenOptions::new().read(true).open(file_path)?;
+            let hmac_key = &manifest.wal_manifest.hmac_key;
+
+            result.append(&mut read_wal(&mut reader, hmac_key)?);
+        }
+
+        Ok(result)
     }
 }
 
 impl WalWriter {
-    pub fn new(storage_config: &StorageConfig, manifest: &std::sync::Arc<Manifest>) -> Self {
+    pub fn new(storage_config: &StorageConfig, manifest: &Arc<RwLock<Manifest>>) -> Self {
         Self {
             config: storage_config.clone(),
-            manifest: std::sync::Arc::clone(manifest),
+            manifest: Arc::clone(manifest),
         }
     }
 
-    pub fn write(
+    pub async fn write(
         &self,
+        partition: &str,
         operation: WalOperation,
         key: Vec<u8>,
         value: Vec<u8>,
@@ -103,9 +112,12 @@ impl WalWriter {
             operation, key, value
         );
 
+        let mut manifest = self.manifest.write().await;
+
         let file_path = format!(
             "{}/{}.wal",
-            &self.config.wal_directory, self.manifest.wal_manifest.active_idx
+            &self.config.wal_directory,
+            manifest.wal_location(&partition)
         );
 
         let mut writer = OpenOptions::new()
@@ -113,7 +125,7 @@ impl WalWriter {
             .create(true)
             .open(file_path)?;
 
-        let hmac_key = &self.manifest.wal_manifest.hmac_key;
+        let hmac_key = &manifest.wal_manifest.hmac_key;
 
         write_wal(&mut writer, hmac_key, operation, key, value)?;
 
