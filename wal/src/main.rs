@@ -79,10 +79,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log4rs::init_file("log/config/log4rs.yaml", Default::default())?;
 
     let config = Arc::new(Config::load("wal/config.toml")?);
-    let manifest = Arc::new(RwLock::new(Manifest::load(&config.storage)?));
+    let manifest = Arc::new(RwLock::new(Manifest::load(&config.directories)?));
 
-    let wal_writer = WalWriter::new(&config.storage, &manifest);
-    let wal_reader = WalReader::new(&config.storage, &manifest);
+    let wal_writer = WalWriter::new(&config.directories, &manifest);
+    let wal_reader = WalReader::new(&config.directories, &manifest);
     let wal_service = WalSrv::new(wal_writer, wal_reader);
 
     let addr = "[::1]:50051".parse()?;

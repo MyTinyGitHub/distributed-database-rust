@@ -9,7 +9,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::{config::StorageConfig, manifest::Manifest};
+use crate::{config::DirectoriesConfig, manifest::Manifest};
 
 pub mod proto {
     tonic::include_proto!("wal");
@@ -55,17 +55,17 @@ pub struct WalRecordData {
 }
 
 pub struct WalWriter {
-    pub config: StorageConfig,
+    pub config: DirectoriesConfig,
     pub manifest: Arc<RwLock<Manifest>>,
 }
 
 pub struct WalReader {
-    pub config: StorageConfig,
+    pub config: DirectoriesConfig,
     pub manifest: Arc<RwLock<Manifest>>,
 }
 
 impl WalReader {
-    pub fn new(storage_config: &StorageConfig, manifest: &Arc<RwLock<Manifest>>) -> Self {
+    pub fn new(storage_config: &DirectoriesConfig, manifest: &Arc<RwLock<Manifest>>) -> Self {
         Self {
             config: storage_config.clone(),
             manifest: Arc::clone(manifest),
@@ -93,7 +93,7 @@ impl WalReader {
 }
 
 impl WalWriter {
-    pub fn new(storage_config: &StorageConfig, manifest: &Arc<RwLock<Manifest>>) -> Self {
+    pub fn new(storage_config: &DirectoriesConfig, manifest: &Arc<RwLock<Manifest>>) -> Self {
         Self {
             config: storage_config.clone(),
             manifest: Arc::clone(manifest),

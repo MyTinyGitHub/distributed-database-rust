@@ -2,7 +2,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs};
 
-use crate::config::StorageConfig;
+use crate::config::DirectoriesConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
@@ -69,7 +69,7 @@ impl Manifest {
         format!("{}_{}.wal", partition_name, partition.file_idx)
     }
 
-    pub fn load(config: &StorageConfig) -> Result<Self, ManifestError> {
+    pub fn load(config: &DirectoriesConfig) -> Result<Self, ManifestError> {
         let path = Self::manifest_path(config);
 
         if !path.exists() {
@@ -105,7 +105,7 @@ impl Manifest {
         Ok(())
     }
 
-    fn manifest_path(config: &StorageConfig) -> std::path::PathBuf {
+    fn manifest_path(config: &DirectoriesConfig) -> std::path::PathBuf {
         std::path::Path::new(&config.config_directory).join("manifest.json")
     }
 

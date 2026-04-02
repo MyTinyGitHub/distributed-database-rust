@@ -4,11 +4,11 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub storage: StorageConfig,
+    pub directories: DirectoriesConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct StorageConfig {
+pub struct DirectoriesConfig {
     pub config_directory: String,
     pub wal_directory: String,
 }
