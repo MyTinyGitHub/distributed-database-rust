@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package storage;
+
+// ─────────────────────────────────────────────
+// Common types
+// ─────────────────────────────────────────────
+
+message IndexKey {
+  string index_name = 1;
+  bytes key = 2;
+}
+
+message ReadByIndexResponse {
+  bytes data = 1;
+}
+
+// ─────────────────────────────────────────────
+// Write
+// ─────────────────────────────────────────────
+
+message WriteRequest {
+  string table = 1;
+  bytes row_data = 2;
+  repeated IndexKey index_keys = 3;
+}
+
+message WriteResponse {
+  bool success = 1;
+}
+
+// ─────────────────────────────────────────────
+// Read
+// ─────────────────────────────────────────────
+
+message ReadByIndexRequest {
+  string table = 1;
+  string index_name = 2;
+  bytes key = 3;
+  uint64 transaction_id = 4;
+}
+
+// ─────────────────────────────────────────────
+// Table management
+// ─────────────────────────────────────────────
+
+message CreateTableRequest {
+  string table = 1;
+}
+
+message DropTableRequest {
+  string table = 1;
+}
+
+message RegisterIndexRequest {
+  string table = 1;
+  string index_name = 2;
+}
+
+message DropIndexRequest {
+  string table = 1;
+  string index_name = 2;
+}
+
+message CreateTableResponse {
+  bool success = 1;
+}
+
+message DropTableResponse {
+  bool success = 1;
+}
+
+message RegisterIndexResponse {
+  bool success = 1;
+}
+
+message DropIndexResponse {
+  bool success = 1;
+}
+
+// ─────────────────────────────────────────────
+// Service
+// ─────────────────────────────────────────────
+
+service StorageEngineService {
+  rpc Write(WriteRequest) returns (WriteResponse);
+  rpc ReadByIndex(ReadByIndexRequest) returns (stream ReadByIndexResponse);
+  rpc CreateTable(CreateTableRequest) returns (CreateTableResponse);
+  rpc DropTable(DropTableRequest) returns (DropTableResponse);
+  rpc RegisterIndex(RegisterIndexRequest) returns (RegisterIndexResponse);
+  rpc DropIndex(DropIndexRequest) returns (DropIndexResponse);
+}
