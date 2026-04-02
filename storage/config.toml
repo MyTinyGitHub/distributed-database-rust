@@ -1,2 +1,2 @@
 [directories]
-heap-files=/
+heap_files=./data/heap_files

@@ -2,10 +2,14 @@ use std::error::Error;
 
 use tonic::Request;
 
-use crate::proto::{wal_service_client::WalServiceClient, ReadRequest, WriteRequest};
+use crate::wal::{wal_service_client::WalServiceClient, ReadRequest, WriteRequest};
 
-pub mod proto {
+pub mod wal {
     tonic::include_proto!("wal");
+}
+
+pub mod storage {
+    tonic::include_proto!("storage");
 }
 
 #[tokio::main]
