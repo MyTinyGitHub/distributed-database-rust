@@ -87,6 +87,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let addr = "[::1]:50051".parse()?;
     let wal = WalServiceServer::new(wal_service);
+
     let reflection = Builder::configure()
         .register_encoded_file_descriptor_set(include_bytes!(concat!(
             env!("OUT_DIR"),

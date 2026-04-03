@@ -1,10 +1,10 @@
 pub struct EngineRecord {
-    version: u8,
-    data: EngineHeader,
+    pub version: u8,
+    pub data: EngineHeader,
 }
 
 pub struct EngineHeader {
-    expired: u64,
-    created: u64,
-    data: Vec<u8>,
+    // pub expired: u64,
+    // pub created: u64,
+    pub data: Vec<u8>,
 }

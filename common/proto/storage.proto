@@ -12,7 +12,7 @@ message IndexKey {
 }
 
 message ReadByIndexResponse {
-  bytes data = 1;
+  repeated bytes data = 1;
 }
 
 // ─────────────────────────────────────────────
@@ -84,7 +84,8 @@ message DropIndexResponse {
 
 service StorageEngineService {
   rpc Write(WriteRequest) returns (WriteResponse);
-  rpc ReadByIndex(ReadByIndexRequest) returns (stream ReadByIndexResponse);
+  // rpc ReadByIndex(ReadByIndexRequest) returns (stream ReadByIndexResponse);
+  rpc ReadByIndex(ReadByIndexRequest) returns (ReadByIndexResponse);
   rpc CreateTable(CreateTableRequest) returns (CreateTableResponse);
   rpc DropTable(DropTableRequest) returns (DropTableResponse);
   rpc RegisterIndex(RegisterIndexRequest) returns (RegisterIndexResponse);

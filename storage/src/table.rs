@@ -1,16 +1,13 @@
-use std::collections::{BTreeMap, HashMap};
-use std::ops::Index;
-use std::path::{Path, PathBuf};
-
-use crate::config::DirectoriesConfig;
 use crate::heap_file::HeapFile;
 use crate::record::EngineRecord;
 use crate::storage_error::StorageError;
+use crate::{config::DirectoriesConfig, record::EngineHeader};
+use std::collections::{BTreeMap, HashMap};
 
 pub struct Table {
     table_name: String,
     file: HeapFile,
-    indexes: HashMap<Vec<u8>, BTreeMap<Vec<u8>, EngineRecord>>,
+    indexes: HashMap<String, BTreeMap<Vec<u8>, EngineRecord>>,
 }
 
 impl Table {
@@ -22,11 +19,34 @@ impl Table {
         })
     }
 
-    pub fn create_index(&mut self, index: Vec<u8>) {
-        self.indexes.insert(index, BTreeMap::new());
+    pub fn insert_data(&mut self, index_name: &str, (key, value): (Vec<u8>, Vec<u8>)) {
+        let engine_record = EngineRecord {
+            version: 1,
+            data: EngineHeader { data: value },
+        };
+
+        let _ = self
+            .indexes
+            .get_mut(index_name)
+            .unwrap()
+            .insert(key, engine_record);
     }
 
-    pub fn add_index_record(&mut self, index: Vec<u8>, value: Vec<u8>, record: EngineRecord) {
-        let _ = self.indexes.get_mut(&index).unwrap().insert(value, record);
+    pub fn retrieve_data(&self, index_name: &str, key: Vec<u8>) -> Result<Vec<u8>, StorageError> {
+        let result = self
+            .indexes
+            .get(index_name)
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .data
+            .data
+            .clone();
+
+        Ok(result)
+    }
+
+    pub fn create_index(&mut self, index: &str) {
+        self.indexes.insert(index.to_string(), BTreeMap::new());
     }
 }
