@@ -25,9 +25,7 @@ impl HeapFile {
 
     pub fn read(&self, start_offset: u64, end_offset: u64) -> Vec<u8> {
         let file_instance = self.file.read().unwrap();
-        // let seeker = SeekFrom::Start(start_offset);
-        // let _ = file_instance.seek(seeker);
-        let mut buffer = vec![0u8; (start_offset - end_offset) as usize];
+        let mut buffer = vec![0u8; (end_offset - start_offset) as usize];
 
         file_instance.read_at(&mut buffer, start_offset).unwrap();
 
