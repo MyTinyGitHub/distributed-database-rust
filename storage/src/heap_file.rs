@@ -1,17 +1,39 @@
 use std::{
     fs::{File, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
     path::PathBuf,
-    sync::Mutex,
+    sync::{Mutex, RwLock},
 };
+
+use std::os::unix::fs::FileExt;
 
 use crate::storage_error::StorageError;
 
 pub struct HeapFile {
     path: PathBuf,
-    file: Mutex<File>,
+    file: RwLock<File>,
 }
 
 impl HeapFile {
+    pub fn insert(&mut self, data: Vec<u8>) -> (u64, u64) {
+        let file_instance = self.file.get_mut().unwrap();
+        let start_offset = file_instance.stream_position().unwrap();
+        let size = file_instance.write(&data).unwrap();
+
+        (start_offset, start_offset + size as u64)
+    }
+
+    pub fn read(&self, start_offset: u64, end_offset: u64) -> Vec<u8> {
+        let file_instance = self.file.read().unwrap();
+        // let seeker = SeekFrom::Start(start_offset);
+        // let _ = file_instance.seek(seeker);
+        let mut buffer = vec![0u8; (start_offset - end_offset) as usize];
+
+        file_instance.read_at(&mut buffer, start_offset).unwrap();
+
+        buffer
+    }
+
     pub fn new(storage_dir: &str, table_name: &str) -> Result<Self, StorageError> {
         let path = PathBuf::from(storage_dir).join(table_name).join("heap.db");
 
@@ -26,7 +48,7 @@ impl HeapFile {
 
         Ok(Self {
             path,
-            file: Mutex::new(file),
+            file: RwLock::new(file),
         })
     }
 }

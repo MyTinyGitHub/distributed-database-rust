@@ -20,9 +20,13 @@ impl Table {
     }
 
     pub fn insert_data(&mut self, index_name: &str, (key, value): (Vec<u8>, Vec<u8>)) {
+        let (start_offset, end_offset) = self.file.insert(value);
         let engine_record = EngineRecord {
             version: 1,
-            data: EngineHeader { data: value },
+            data: EngineHeader {
+                start_offset,
+                end_offset,
+            },
         };
 
         let _ = self
@@ -33,17 +37,19 @@ impl Table {
     }
 
     pub fn retrieve_data(&self, index_name: &str, key: Vec<u8>) -> Result<Vec<u8>, StorageError> {
-        let result = self
+        let engine_header = &self
             .indexes
             .get(index_name)
             .unwrap()
             .get(&key)
             .unwrap()
-            .data
-            .data
-            .clone();
+            .data;
 
-        Ok(result)
+        let data = &self
+            .file
+            .read(engine_header.start_offset, engine_header.end_offset);
+
+        Ok(data.clone())
     }
 
     pub fn create_index(&mut self, index: &str) {

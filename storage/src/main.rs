@@ -33,7 +33,9 @@ impl StorageEngine {
     }
 
     pub fn read_data(&self, table_name: &str, index_name: &str, index_key: Vec<u8>) -> Vec<u8> {
-        self.tables[table_name]
+        self.tables
+            .get(table_name)
+            .unwrap()
             .retrieve_data(index_name, index_key)
             .unwrap()
     }
@@ -114,7 +116,7 @@ impl StorageEngineService for StorageEngineServer {
     ) -> Result<Response<ReadByIndexResponse>, Status> {
         let request = request.get_ref();
 
-        let data = self.storage_engine.read().unwrap().read_data(
+        let data = self.storage_engine.write().unwrap().read_data(
             &request.table,
             &request.index_name,
             request.key.clone(),

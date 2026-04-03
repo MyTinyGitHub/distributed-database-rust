@@ -6,5 +6,6 @@ pub struct EngineRecord {
 pub struct EngineHeader {
     // pub expired: u64,
     // pub created: u64,
-    pub data: Vec<u8>,
+    pub start_offset: u64,
+    pub end_offset: u64,
 }
