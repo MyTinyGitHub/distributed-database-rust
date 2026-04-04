@@ -32,12 +32,16 @@ impl StorageEngine {
         }
     }
 
-    pub fn read_data(&self, table_name: &str, index_name: &str, index_key: Vec<u8>) -> Vec<u8> {
+    pub fn read_data(
+        &self,
+        table_name: &str,
+        index_name: &str,
+        index_key: Vec<u8>,
+    ) -> Result<Vec<u8>, StorageError> {
         self.tables
             .get(table_name)
-            .unwrap()
+            .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?
             .retrieve_data(index_name, index_key)
-            .unwrap()
     }
 
     pub fn insert_to_table(
@@ -50,27 +54,48 @@ impl StorageEngine {
         let table = self
             .tables
             .get_mut(table_name)
-            .expect("Unable to get the table");
+            .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?;
 
-        table.insert_data(index_name, (key, data));
-
-        Ok(())
+        table.insert_data(index_name, (key, data))
     }
 
     pub fn create_table(&mut self, table_name: &str) -> Result<(), StorageError> {
+        if self.tables.contains_key(table_name) {
+            return Err(StorageError::TableAlreadyExists(table_name.to_string()));
+        }
+
         let table = Table::new(table_name, &self.config.directories)?;
+
         self.tables.insert(table_name.to_string(), table);
+
         Ok(())
     }
 
-    pub fn create_index(&mut self, table_name: &str, index_name: &str) -> Result<(), StorageError> {
-        let _ = &self
+    pub fn drop_table(&mut self, table_name: &str) -> Result<(), StorageError> {
+        let table = self
             .tables
-            .get_mut(table_name)
-            .unwrap()
-            .create_index(index_name);
+            .remove(table_name)
+            .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?;
+
+        table.drop();
 
         Ok(())
+    }
+
+    pub fn drop_index(&mut self, table_name: &str, index_name: &str) -> Result<(), StorageError> {
+        let table = self
+            .tables
+            .get_mut(table_name)
+            .ok_or_else(|| StorageError::TableNotFound(index_name.to_string()))?;
+
+        table.drop_index(index_name)
+    }
+
+    pub fn create_index(&mut self, table_name: &str, index_name: &str) -> Result<(), StorageError> {
+        self.tables
+            .get_mut(table_name)
+            .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?
+            .create_index(index_name)
     }
 }
 
@@ -122,6 +147,8 @@ impl StorageEngineService for StorageEngineServer {
             request.key.clone(),
         );
 
+        let data = data.map_err(|e| Status::invalid_argument(e.to_string()))?;
+
         let mut result = Vec::new();
         result.push(data);
 
@@ -148,6 +175,12 @@ impl StorageEngineService for StorageEngineServer {
     ) -> Result<Response<DropTableResponse>, Status> {
         let request = request.get_ref();
 
+        let _ = self
+            .storage_engine
+            .write()
+            .unwrap()
+            .drop_table(&request.table);
+
         Ok(Response::new(DropTableResponse { success: false }))
     }
 
@@ -171,6 +204,16 @@ impl StorageEngineService for StorageEngineServer {
         request: Request<DropIndexRequest>,
     ) -> Result<Response<DropIndexResponse>, Status> {
         let request = request.get_ref();
+
+        let result = self
+            .storage_engine
+            .write()
+            .expect("Unable to aquire a write lock")
+            .drop_index(&request.table, &request.index_name);
+
+        if let Err(error) = result {
+            return Err(Status::invalid_argument(error.to_string()));
+        }
 
         Ok(Response::new(DropIndexResponse { success: false }))
     }

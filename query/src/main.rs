@@ -1,10 +1,10 @@
 use std::error::Error;
 
-use tonic::Request;
+use tonic::{Request, Response};
 
 use crate::storage::{
-    storage_engine_service_client::StorageEngineServiceClient, CreateTableRequest, IndexKey,
-    ReadByIndexRequest, RegisterIndexRequest, WriteRequest,
+    storage_engine_service_client::StorageEngineServiceClient, CreateTableRequest,
+    DropIndexRequest, IndexKey, ReadByIndexRequest, RegisterIndexRequest, WriteRequest,
 };
 
 pub mod wal {
@@ -77,8 +77,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     for data in &response.data {
         let response_deserialized: &str = bincode::deserialize(data).unwrap();
-        print!("{:?}", response_deserialized);
+        println!("{:?}", response_deserialized);
     }
+
+    let drop_non_existent_index = DropIndexRequest {
+        table: table_name,
+        index_name: "test_non_existent".to_owned(),
+    };
+
+    let response = client
+        .drop_index(Request::new(drop_non_existent_index))
+        .await;
+
+    assert!(response.is_err());
+    println!("{:?}", response.err());
 
     // let request = Request::new(write_request);
     // let _ = client.write(request).await?;
