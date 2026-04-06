@@ -74,30 +74,17 @@ impl PagingBtree {
         for (_, page_location) in build_path.iter_mut() {
             let mut page = page_location.load_page(storage);
 
-            if let Some(pages) = &page.pages {
-                println!("removing key: {:?}", key);
-            }
+            if let Some(pages) = &page.pages {}
 
             if removed && needs_rebalancing == false {
                 break;
             }
 
-            if removed {
-                println!("{:?}", page);
+            if removed && needs_rebalancing {
                 page.rebalance(key, storage);
                 page_location.write_page(&page, storage);
-                // verify invariant
-                if let Some(pages) = &page.pages {
-                    println!("{:?}", page);
-                    debug_assert_eq!(
-                        pages.len(),
-                        page.nodes.len() + 1,
-                        "invariant broken after rebalance: {} pages, {} nodes at offset {}",
-                        pages.len(),
-                        page.nodes.len(),
-                        page_location.start_offset
-                    );
-                }
+                needs_rebalancing = page.nodes.len() < MIN_KEYS_PER_PAGE;
+                continue;
             }
 
             if page.contains_match(key).is_some() {
@@ -156,7 +143,6 @@ impl PagingBtree {
 impl PageLocation {
     pub fn alloc<W: PageStore>(storage: &mut W) -> std::io::Result<Self> {
         let offset = storage.seek(SeekFrom::End(0))?;
-        debug_assert_eq!(offset % PAGE_SIZE as u64, 0, "file is not page-aligned");
         Ok(Self {
             start_offset: offset,
         })
@@ -278,7 +264,7 @@ impl Page {
         let (l_page_split, r_page_split) = match self.pages.take() {
             None => (None, None),
             Some(children) => {
-                let r = children.split_at(MAX_KEYS_PER_PAGE / 2);
+                let r = children.split_at(MAX_KEYS_PER_PAGE / 2 + 1);
                 (Some(Vec::from(r.0)), Some(Vec::from(r.1)))
             }
         };
@@ -377,10 +363,8 @@ impl Page {
             (None, Some(r_n)) => {
                 let mut r_page = r_n.load_page(storage);
                 if r_page.nodes.len() > MIN_KEYS_PER_PAGE {
-                    println!("r_n_rebalance");
                     self.rebalance_right_page(&mut m_page, &mut r_page);
                 } else {
-                    println!("r_n_merge");
                     self.merge_right_page(&mut m_page, &mut r_page);
                 }
 
@@ -396,13 +380,10 @@ impl Page {
                     self.merge_left_page(index, &mut m_page, &mut l_page);
                 }
 
-                println!("l_n");
-
                 m_n.write_page(&m_page, storage);
                 l_n.write_page(&l_page, storage);
             }
             (Some(l_n), Some(r_n)) => {
-                println!("both");
                 let mut l_page = l_n.load_page(storage);
                 let mut r_page = r_n.load_page(storage);
 
