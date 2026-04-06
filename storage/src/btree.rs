@@ -27,8 +27,8 @@ pub struct Page {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Node {
-    pub key: Vec<u8>,
-    pub value: Vec<u8>,
+    pub key: Box<[u8]>,
+    pub value: Box<[u8]>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -59,24 +59,18 @@ impl PagingBtree {
         }
     }
 
-    pub fn add(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), StorageError> {
-        let file_path = self.file_path.clone();
-
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(&file_path)
-            .map_err(StorageError::Io)?;
-
-        self.add_node(&mut file, key, value)
+    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<Box<[u8]>> {
+        let root_page = self.root_page_location.load_page(storage);
+        root_page.get(key, storage)
     }
+
+    pub fn remove<R: PageStore>(&self, key: &[u8], storage: &mut R) {}
 
     pub fn add_node<W: PageStore>(
         &mut self,
         storage: &mut W,
-        key: Vec<u8>,
-        value: Vec<u8>,
+        key: &[u8],
+        value: &[u8],
     ) -> Result<(), StorageError> {
         let root_page_location = self.root_page_location.clone();
         let mut root_page: Page = root_page_location.load_page(storage);
@@ -84,7 +78,7 @@ impl PagingBtree {
 
         let mut overflow = None;
         for (page, page_location) in build_path.iter_mut() {
-            let result = page.push(key.clone(), value.clone(), overflow, page_location, storage);
+            let result = page.push(key, value, overflow, page_location, storage);
 
             if let PushResult::Inserted = result {
                 overflow = None;
@@ -155,19 +149,43 @@ impl Page {
         }
     }
 
+    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<Box<[u8]>> {
+        if let Some(node) = self.contains_match(key) {
+            return Some(node.value.clone());
+        }
+
+        match &self.pages {
+            None => None,
+            Some(page) => {
+                if let Some(index) = self.find_position(key) {
+                    let child = &page[index];
+                    let child = child.load_page(storage);
+                    return child.get(key, storage);
+                }
+                None
+            }
+        }
+    }
+
     pub fn push<W: PageStore>(
         &mut self,
-        key: Vec<u8>,
-        value: Vec<u8>,
+        key: &[u8],
+        value: &[u8],
         prev_push: Option<PushResult>,
         page_location: &PageLocation,
         storage: &mut W,
     ) -> PushResult {
-        let index = self.find_position(&key);
+        let index = self.find_position(&key).unwrap_or_else(|| 0);
 
         match prev_push {
             None => {
-                self.nodes.insert(index, Node { key, value });
+                self.nodes.insert(
+                    index,
+                    Node {
+                        key: key.into(),
+                        value: value.into(),
+                    },
+                );
             }
             Some(prev) => match prev {
                 PushResult::Inserted => {
@@ -235,7 +253,7 @@ impl Page {
 
     pub fn build_path<W: PageStore>(
         &mut self,
-        key: &Vec<u8>,
+        key: &[u8],
         storage: &mut W,
         page_location: PageLocation,
     ) -> Vec<(Page, PageLocation)> {
@@ -243,9 +261,9 @@ impl Page {
             return vec![(self.clone(), page_location)];
         }
 
-        let index = self.find_position(key);
+        let index = self.find_position(key).unwrap();
 
-        let child_location = self.pages.as_mut().unwrap().get(index).unwrap().clone();
+        let child_location = &self.pages.as_mut().unwrap()[index];
         let mut page = child_location.load_page(storage);
 
         let mut build_path = page.build_path(key, storage, child_location.clone());
@@ -254,30 +272,30 @@ impl Page {
         build_path
     }
 
-    pub fn find_position(&self, key: &Vec<u8>) -> usize {
+    pub fn find_position(&self, key: &[u8]) -> Option<usize> {
         if self.nodes.is_empty() {
-            return 0;
+            return None;
         }
 
-        if key < &self.nodes.get(0).unwrap().key {
-            return 0;
+        if key < self.nodes[0].key.as_ref() {
+            return Some(0);
         }
 
         for i in 1..self.nodes.len() {
             let cur_node = self.nodes.get(i).unwrap();
             let prev_node = self.nodes.get(i - 1).unwrap();
 
-            if &prev_node.key < key && key <= &cur_node.key {
-                return i;
+            if prev_node.key.as_ref() < key && key <= cur_node.key.as_ref() {
+                return Some(i);
             }
         }
 
-        self.nodes.len()
+        Some(self.nodes.len())
     }
 
-    pub fn contains_match(&self, key: &Vec<u8>) -> Option<&Node> {
+    pub fn contains_match(&self, key: &[u8]) -> Option<&Node> {
         self.nodes
-            .binary_search_by(|n| n.key.cmp(key))
+            .binary_search_by(|n| n.key.as_ref().cmp(key))
             .ok()
             .map(|i| &self.nodes[i])
     }
