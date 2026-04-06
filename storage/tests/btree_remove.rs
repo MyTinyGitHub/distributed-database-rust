@@ -158,6 +158,8 @@ mod tests {
         sorted.sort();
         assert_eq!(collected, sorted, "remaining keys should be sorted");
 
+        println!("{:?}", sorted);
+
         // Check only odd keys remain
         for i in 0u8..20 {
             let result = tree.get(&[i], &mut storage);
@@ -221,14 +223,58 @@ mod tests {
         }
 
         // Remove some keys
-        tree.remove(&[5], &mut storage);
+        tree.remove(&[2], &mut storage);
+        tree.remove(&[13], &mut storage);
+
+        // Verify remaining keys
+        assert!(tree.get(&[2], &mut storage).is_none());
+        assert!(tree.get(&[13], &mut storage).is_none());
+
+        for i in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14] {
+            assert!(
+                tree.get(&[i], &mut storage).is_some(),
+                "key {} should exist",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_remove_after_splits() {
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree();
+
+        // Insert enough to trigger splits (11+ keys)
+        for i in 0u8..100 {
+            tree.add_node(&mut storage, &[i], &[i])
+                .expect("insert failed");
+        }
+
+        // Remove some keys
+        tree.remove(&[0], &mut storage);
+        tree.remove(&[2], &mut storage);
+        tree.remove(&[4], &mut storage);
+        tree.remove(&[6], &mut storage);
+        tree.remove(&[8], &mut storage);
         tree.remove(&[10], &mut storage);
 
         // Verify remaining keys
-        assert!(tree.get(&[5], &mut storage).is_none());
+        assert!(tree.get(&[0], &mut storage).is_none());
+        assert!(tree.get(&[2], &mut storage).is_none());
+        assert!(tree.get(&[4], &mut storage).is_none());
+        assert!(tree.get(&[6], &mut storage).is_none());
+        assert!(tree.get(&[8], &mut storage).is_none());
         assert!(tree.get(&[10], &mut storage).is_none());
 
-        for i in [0, 1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14] {
+        for i in [1, 3, 5, 7, 9, 11, 12, 13, 14] {
+            assert!(
+                tree.get(&[i], &mut storage).is_some(),
+                "key {} should exist",
+                i
+            );
+        }
+
+        for i in 15u8..100 {
             assert!(
                 tree.get(&[i], &mut storage).is_some(),
                 "key {} should exist",

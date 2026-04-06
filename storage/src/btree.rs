@@ -1,5 +1,4 @@
 use std::{
-    fs::OpenOptions,
     io::{Read, Seek, SeekFrom, Write},
     path::PathBuf,
 };
@@ -20,19 +19,19 @@ pub struct PagingBtree {
     pub root_page_location: PageLocation,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Page {
     pub nodes: Vec<Node>,
     pub pages: Option<Vec<PageLocation>>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
     pub key: Box<[u8]>,
     pub value: Box<[u8]>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PageLocation {
     pub start_offset: u64,
 }
@@ -72,14 +71,38 @@ impl PagingBtree {
 
         let mut needs_rebalancing = false;
         let mut removed = false;
-        for (page, page_location) in build_path.iter_mut() {
+        for (_, page_location) in build_path.iter_mut() {
+            let mut page = page_location.load_page(storage);
+
+            if let Some(pages) = &page.pages {
+                println!("removing key: {:?}", key);
+            }
+
             if removed && needs_rebalancing == false {
                 break;
             }
 
+            if removed {
+                println!("{:?}", page);
+                page.rebalance(key, storage);
+                page_location.write_page(&page, storage);
+                // verify invariant
+                if let Some(pages) = &page.pages {
+                    println!("{:?}", page);
+                    debug_assert_eq!(
+                        pages.len(),
+                        page.nodes.len() + 1,
+                        "invariant broken after rebalance: {} pages, {} nodes at offset {}",
+                        pages.len(),
+                        page.nodes.len(),
+                        page_location.start_offset
+                    );
+                }
+            }
+
             if page.contains_match(key).is_some() {
                 page.remove(key);
-                page_location.write_page(page, storage);
+                page_location.write_page(&page, storage);
                 needs_rebalancing = page.nodes.len() < MIN_KEYS_PER_PAGE;
                 removed = true;
                 continue;
@@ -293,7 +316,12 @@ impl Page {
             return vec![(self.clone(), page_location)];
         }
 
-        let index = self.find_position(key).unwrap();
+        let index = self.find_position(key);
+        if index.is_none() {
+            return vec![];
+        }
+
+        let index = index.unwrap();
 
         let child_location = &self.pages.as_mut().unwrap()[index];
         let mut page = child_location.load_page(storage);
@@ -333,6 +361,166 @@ impl Page {
         }
 
         Some(self.nodes.len())
+    }
+
+    pub fn rebalance<W: PageStore>(&mut self, key: &[u8], storage: &mut W) {
+        assert!(self.pages.is_some());
+
+        let index = self.find_position(key).unwrap();
+        let m_n = self.pages.as_ref().unwrap()[index];
+        let mut m_page = m_n.load_page(storage);
+
+        let neighbours = self.child_neighbours(index);
+
+        match neighbours {
+            (None, None) => unreachable!("Should not happend that there is only one child"),
+            (None, Some(r_n)) => {
+                let mut r_page = r_n.load_page(storage);
+                if r_page.nodes.len() > MIN_KEYS_PER_PAGE {
+                    println!("r_n_rebalance");
+                    self.rebalance_right_page(&mut m_page, &mut r_page);
+                } else {
+                    println!("r_n_merge");
+                    self.merge_right_page(&mut m_page, &mut r_page);
+                }
+
+                m_n.write_page(&m_page, storage);
+                r_n.write_page(&r_page, storage);
+            }
+            (Some(l_n), None) => {
+                let mut l_page = l_n.load_page(storage);
+
+                if l_page.nodes.len() > MIN_KEYS_PER_PAGE {
+                    self.rebalance_left_page(&mut m_page, &mut l_page);
+                } else {
+                    self.merge_left_page(index, &mut m_page, &mut l_page);
+                }
+
+                println!("l_n");
+
+                m_n.write_page(&m_page, storage);
+                l_n.write_page(&l_page, storage);
+            }
+            (Some(l_n), Some(r_n)) => {
+                println!("both");
+                let mut l_page = l_n.load_page(storage);
+                let mut r_page = r_n.load_page(storage);
+
+                if r_page.nodes.len() > MIN_KEYS_PER_PAGE {
+                    let r_node = r_page.nodes.remove(0);
+                    let sep_node = self.nodes.remove(index);
+
+                    self.nodes.insert(index, r_node);
+                    m_page.nodes.push(sep_node);
+
+                    if r_page.pages.is_some() {
+                        let r_page = r_page.pages.as_mut().unwrap().remove(0);
+                        // let sep_page = self.pages.as_mut().unwrap().remove(index + 1);
+                        // self.pages.as_mut().unwrap().insert(index + 1, r_page);
+                        m_page.pages.as_mut().unwrap().push(r_page);
+                    }
+                } else if l_page.nodes.len() > MIN_KEYS_PER_PAGE {
+                    let l_node = l_page.nodes.remove(l_page.nodes.len() - 1);
+                    let sep_node = self.nodes.remove(index - 1);
+
+                    self.nodes.insert(index - 1, l_node);
+                    m_page.nodes.insert(0, sep_node);
+
+                    if let Some(pages) = l_page.pages.as_mut() {
+                        let l_page_index = pages.len() - 1;
+                        let l_page = pages.remove(l_page_index);
+                        m_page.pages.as_mut().unwrap().insert(0, l_page);
+                    }
+                } else {
+                    // let sep_node = self.nodes.remove(index);
+
+                    // m_page.nodes.push(sep_node);
+                    // m_page.nodes.append(&mut r_page.nodes);
+
+                    // if let Some(pages) = m_page.pages.as_mut() {
+                    //     pages.append(r_page.pages.as_mut().unwrap());
+                    // }
+
+                    // self.pages.as_mut().unwrap().remove(index + 1);
+                    self.merge_left_page(index, &mut m_page, &mut l_page);
+                }
+
+                m_n.write_page(&m_page, storage);
+                l_n.write_page(&l_page, storage);
+                r_n.write_page(&r_page, storage);
+            }
+        };
+    }
+
+    fn merge_left_page(&mut self, index: usize, m_page: &mut Page, l_page: &mut Page) {
+        let sep_node = self.nodes.remove(index - 1);
+        l_page.nodes.push(sep_node);
+        l_page.nodes.append(&mut m_page.nodes);
+
+        if let Some(pages) = l_page.pages.as_mut() {
+            pages.append(m_page.pages.as_mut().unwrap());
+        }
+
+        self.pages.as_mut().unwrap().remove(index);
+    }
+
+    fn merge_right_page(&mut self, m_page: &mut Page, r_page: &mut Page) {
+        let sep_node = self.nodes.remove(0);
+        m_page.nodes.push(sep_node);
+        m_page.nodes.append(&mut r_page.nodes);
+
+        if let Some(pages) = m_page.pages.as_mut() {
+            pages.append(r_page.pages.as_mut().unwrap());
+        }
+
+        self.pages.as_mut().unwrap().remove(1);
+    }
+
+    fn rebalance_right_page(&mut self, m_page: &mut Page, r_page: &mut Page) {
+        let r_node = r_page.nodes.remove(0);
+        let sep_node = self.nodes.remove(0);
+
+        if r_page.pages.is_some() {
+            let r_page = r_page.pages.as_mut().unwrap().remove(0);
+            m_page.pages.as_mut().unwrap().push(r_page);
+        }
+
+        self.nodes.insert(0, r_node);
+        m_page.nodes.push(sep_node);
+    }
+
+    fn rebalance_left_page(&mut self, m_page: &mut Page, l_page: &mut Page) {
+        let l_node = l_page.nodes.remove(l_page.nodes.len() - 1);
+        let sep_node = self.nodes.remove(self.nodes.len() - 1);
+
+        self.nodes.push(l_node);
+        m_page.nodes.insert(0, sep_node);
+
+        if let Some(pages) = l_page.pages.as_mut() {
+            let l_page_index = pages.len() - 1;
+            let l_page = pages.remove(l_page_index);
+            m_page.pages.as_mut().unwrap().insert(0, l_page);
+        }
+    }
+
+    pub fn child_neighbours(&self, index: usize) -> (Option<PageLocation>, Option<PageLocation>) {
+        let pages = self.pages.as_ref().unwrap();
+
+        let l_page = if index > 0 {
+            let l_index = index - 1;
+            Some(pages[l_index].clone())
+        } else {
+            None
+        };
+
+        let r_page = if index + 1 < pages.len() {
+            let r_index = index + 1;
+            Some(pages[r_index].clone())
+        } else {
+            None
+        };
+
+        (l_page, r_page)
     }
 
     pub fn contains_match(&self, key: &[u8]) -> Option<&Node> {
