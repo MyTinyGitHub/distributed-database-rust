@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 const PAGE_SIZE: usize = 4096;
 const MAX_KEYS_PER_PAGE: usize = 10;
+const MIN_KEYS_PER_PAGE: usize = MAX_KEYS_PER_PAGE / 2 - 1;
 
 pub trait PageStore: Read + Write + Seek {}
 impl<T: Read + Write + Seek> PageStore for T {}
@@ -64,7 +65,33 @@ impl PagingBtree {
         root_page.get(key, storage)
     }
 
-    pub fn remove<R: PageStore>(&self, key: &[u8], storage: &mut R) {}
+    pub fn remove<W: PageStore>(&self, key: &[u8], storage: &mut W) {
+        let root_page_location = self.root_page_location.clone();
+        let mut root_page: Page = root_page_location.load_page(storage);
+        let mut build_path = root_page.build_path(&key, storage, root_page_location);
+
+        let mut needs_rebalancing = false;
+        let mut removed = false;
+        for (page, page_location) in build_path.iter_mut() {
+            if removed && needs_rebalancing == false {
+                break;
+            }
+
+            if page.contains_match(key).is_some() {
+                page.remove(key);
+                page_location.write_page(page, storage);
+                needs_rebalancing = page.nodes.len() < MIN_KEYS_PER_PAGE;
+                removed = true;
+                continue;
+            }
+        }
+
+        //leaf and num_keys > minimum -> OK
+        //leaf and num_keys < minimum && sibling has keys -> Take KEY from sibling with more KEYS and replace it with internal separator and push separator to the node
+        //leaf and num_keys < minimum && sibling keys < minimum -> Merge siblings
+
+        //midle of tree -> take key from leaf, so that all keys are smaller/greater rebalance tree if neede
+    }
 
     pub fn add_node<W: PageStore>(
         &mut self,
@@ -147,6 +174,11 @@ impl Page {
             nodes: Vec::new(),
             pages: None,
         }
+    }
+
+    pub fn remove(&mut self, key: &[u8]) -> Node {
+        let index = self.index_of(key).unwrap();
+        self.nodes.remove(index)
     }
 
     pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<Box<[u8]>> {
@@ -272,6 +304,16 @@ impl Page {
         build_path
     }
 
+    pub fn index_of(&self, key: &[u8]) -> Option<usize> {
+        for i in 0..self.nodes.len() {
+            if self.nodes[i].key.as_ref() == key {
+                return Some(i);
+            }
+        }
+
+        None
+    }
+
     pub fn find_position(&self, key: &[u8]) -> Option<usize> {
         if self.nodes.is_empty() {
             return None;
@@ -298,5 +340,9 @@ impl Page {
             .binary_search_by(|n| n.key.as_ref().cmp(key))
             .ok()
             .map(|i| &self.nodes[i])
+    }
+
+    pub fn is_leaf(&self) -> bool {
+        self.pages.is_none()
     }
 }

@@ -2,6 +2,10 @@ include!("btree_helper.rs");
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Cursor, Seek, SeekFrom};
+
+    use storage::btree::Node;
+
     use super::*;
 
     // ── Basic push ───────────────────────────────────────────────────────────────

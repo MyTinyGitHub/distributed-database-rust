@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use storage::btree::{Node, Page, PageLocation, PageStore, PagingBtree};
+use storage::btree::{Page, PageLocation, PageStore, PagingBtree};
 
 pub const PAGE_SIZE: usize = 4096;
 pub const MAX_KEYS_PER_PAGE: usize = 10;
