@@ -43,6 +43,13 @@ pub enum PushResult {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub enum RemoveResult {
+    Removed,
+    NotFound,
+    Underflow,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OverFlowElement {
     key: Box<[u8]>,
     page: Page,
@@ -55,10 +62,38 @@ pub enum Page {
 }
 
 impl InternalNode {
+    pub fn remove<W: PageStore>(&self, key: &[u8], storage: &mut W) -> RemoveResult {
+        let index = self.index_of(key);
+        let page_loc = self.pages[index];
+        let mut page = page_loc.load_page(storage);
+        let result = page.remove(key, storage);
+        page_loc.write_page(&page, storage);
+
+        match result {
+            RemoveResult::NotFound => RemoveResult::NotFound,
+            RemoveResult::Removed => RemoveResult::Removed,
+            RemoveResult::Underflow => {
+                if self.pages.len() > MIN_KEYS_PER_PAGE {
+                    RemoveResult::Removed
+                } else {
+                    RemoveResult::Underflow
+                }
+            }
+        }
+    }
+
+    pub fn get<W: PageStore>(&self, key: &[u8], storage: &mut W) -> Option<ValuePageLocation> {
+        let index = self.index_of(key);
+        self.pages[index].load_page(storage).get(key, storage)
+    }
+
     pub fn add<W: PageStore>(&mut self, node: Node, storage: &mut W) -> PushResult {
-        let index = self.index_of(&node);
-        let mut page = self.pages[index].load_page(storage);
+        let index = self.index_of(&node.key);
+
+        let page_loc = self.pages[index];
+        let mut page = page_loc.load_page(storage);
         let result = page.add(node.clone(), storage);
+        page_loc.write_page(&page, storage);
 
         match result {
             PushResult::Inserted => PushResult::Inserted,
@@ -80,7 +115,7 @@ impl InternalNode {
         }
     }
 
-    fn split(&mut self) -> (Page, Box<[u8]>) {
+    pub fn split(&mut self) -> (Page, Box<[u8]>) {
         let r_separators = self.separators.split_off(self.separators.len() / 2);
         let r_pages = self.pages.split_off(self.pages.len() / 2);
 
@@ -94,15 +129,38 @@ impl InternalNode {
         );
     }
 
-    fn index_of(&self, adding: &Node) -> usize {
-        self.separators.partition_point(|sep| *sep <= adding.key)
+    fn index_of(&self, key: &[u8]) -> usize {
+        self.separators.partition_point(|sep| sep.as_ref() <= key)
     }
 }
 
 impl LeafNode {
+    pub fn remove(&mut self, key: &[u8]) -> RemoveResult {
+        let index = self.nodes.partition_point(|n| n.key.as_ref() < key);
+        if index < self.nodes.len() && self.nodes[index].key.as_ref() == key {
+            self.nodes.remove(index);
+            if self.nodes.len() > MIN_KEYS_PER_PAGE {
+                RemoveResult::Removed
+            } else {
+                RemoveResult::Underflow
+            }
+        } else {
+            RemoveResult::NotFound
+        }
+    }
+
+    pub fn get(&self, key: &[u8]) -> Option<ValuePageLocation> {
+        for node in &self.nodes {
+            if node.key.as_ref() == key {
+                return Some(node.value_location.clone());
+            }
+        }
+        None
+    }
+
     pub fn add(&mut self, node: Node) -> PushResult {
-        let index = self.index_of(&node);
-        self.nodes.insert(index, node.clone());
+        let index = self.index_of(&node.key);
+        self.nodes.insert(index, node);
         if self.nodes.len() >= MAX_KEYS_PER_PAGE {
             let (page, key) = self.split();
             return PushResult::Overflow(OverFlowElement { key, page });
@@ -116,22 +174,39 @@ impl LeafNode {
         return (Page::Leaf(LeafNode { nodes: r_nodes }), m_node.key);
     }
 
-    fn index_of(&self, adding: &Node) -> usize {
-        self.nodes.partition_point(|sep| sep.key <= adding.key)
+    fn index_of(&self, key: &[u8]) -> usize {
+        self.nodes.partition_point(|sep| sep.key.as_ref() <= key)
     }
 }
 
 impl Page {
-    fn add<W: PageStore>(&mut self, adding: Node, storage: &mut W) -> PushResult {
+    pub fn add<W: PageStore>(&mut self, adding: Node, storage: &mut W) -> PushResult {
         match self {
             Page::Internal(node) => node.add(adding, storage),
             Page::Leaf(node) => node.add(adding),
         }
     }
-}
 
-pub trait AddPage {
-    fn add<W: PageStore>(node: Node, storage: &mut W);
+    pub fn split(&mut self) -> (Page, Box<[u8]>) {
+        match self {
+            Page::Internal(internal) => internal.split(),
+            Page::Leaf(leaf) => leaf.split(),
+        }
+    }
+
+    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<ValuePageLocation> {
+        match self {
+            Page::Internal(internal) => internal.get(key, storage),
+            Page::Leaf(leaf) => leaf.get(key),
+        }
+    }
+
+    pub fn remove<W: PageStore>(&mut self, key: &[u8], storage: &mut W) -> RemoveResult {
+        match self {
+            Page::Internal(internal) => internal.remove(key, storage),
+            Page::Leaf(leaf) => leaf.remove(key),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -153,12 +228,17 @@ impl PagingBtree {
         }
     }
 
-    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<Box<[u8]>> {
-        unimplemented!()
+    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<ValuePageLocation> {
+        let page = self.root_page_location.load_page(storage);
+        page.get(key, storage)
     }
 
-    pub fn remove<W: PageStore>(&self, key: &[u8], storage: &mut W) {
-        unimplemented!();
+    pub fn remove<W: PageStore>(&self, key: &[u8], storage: &mut W) -> Result<(), StorageError> {
+        let mut root_page = self.root_page_location.load_page(storage);
+
+        root_page.remove(key, storage);
+
+        Ok(())
     }
 
     pub fn add_node<W: PageStore>(
@@ -168,9 +248,29 @@ impl PagingBtree {
     ) -> Result<(), StorageError> {
         let mut root_page = self.root_page_location.load_page(storage);
 
-        root_page.add(node, storage);
+        let result = root_page.add(node, storage);
+        match result {
+            PushResult::Overflow(overflow) => {
+                let right_page_loc = PageLocation::alloc(storage)?;
+                right_page_loc.write_page(&overflow.page, storage);
 
-        Ok(())
+                let left_page_loc = PageLocation::alloc(storage)?;
+                left_page_loc.write_page(&root_page, storage);
+
+                let new_root_page = Page::Internal(InternalNode {
+                    separators: vec![overflow.key],
+                    pages: vec![left_page_loc, right_page_loc],
+                });
+
+                self.root_page_location.write_page(&new_root_page, storage);
+
+                Ok(())
+            }
+            PushResult::Inserted => {
+                self.root_page_location.write_page(&root_page, storage);
+                Ok(())
+            }
+        }
     }
 }
 

@@ -1,5 +1,4 @@
 use std::{error::Error, sync::Arc};
-
 use tokio::sync::RwLock;
 use tonic::{transport::Server, Request, Response};
 use tonic_reflection::server::Builder;
@@ -91,7 +90,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let reflection = Builder::configure()
         .register_encoded_file_descriptor_set(include_bytes!(concat!(
             env!("OUT_DIR"),
-            "/wal_descriptor.bin"
+            "/database.bin"
         )))
         .build_v1()?;
 
