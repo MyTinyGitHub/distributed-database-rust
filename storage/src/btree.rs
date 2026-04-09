@@ -19,21 +19,10 @@ pub struct PagingBtree {
     pub root_page_location: PageLocation,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Node {
-    pub key: Box<[u8]>,
-    pub value_location: ValuePageLocation,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValuePageLocation {
-    offset: u64,
-    size: usize,
-}
-
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct PageLocation {
     pub start_offset: u64,
+    pub size: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -62,6 +51,20 @@ pub enum Page {
 }
 
 impl InternalNode {
+    pub fn pop_first(&mut self) -> (Box<[u8]>, PageLocation) {
+        let separator = self.keys.remove(0);
+        let page_loc = self.value_location.remove(0);
+
+        (separator, page_loc)
+    }
+
+    pub fn pop_last(&mut self) -> (Box<[u8]>, PageLocation) {
+        let separator = self.separators.remove(self.separators.len() - 1);
+        let page_loc = self.pages.remove(self.pages.len() - 1);
+
+        (separator, page_loc)
+    }
+
     pub fn remove<W: PageStore>(&self, key: &[u8], storage: &mut W) -> RemoveResult {
         let index = self.index_of(key);
         let page_loc = self.pages[index];
@@ -73,7 +76,31 @@ impl InternalNode {
             RemoveResult::NotFound => RemoveResult::NotFound,
             RemoveResult::Removed => RemoveResult::Removed,
             RemoveResult::Underflow => {
-                if self.pages.len() > MIN_KEYS_PER_PAGE {
+                let r_page = self.pages.get(index + 1);
+                let l_page = self.pages.get(index - 1);
+
+                let r_page = match r_page {
+                    None => None,
+                    Some(loc) => Some(loc.load_page(storage)),
+                };
+
+                let l_page = match l_page {
+                    None => None,
+                    Some(loc) => Some(loc.load_page(storage)),
+                };
+
+                match (l_page, r_page) {
+                    (None, None) => unreachable!(),
+                    (Some(mut l_page), None) => {
+                        let (key, ref_page) = l_page.pop_last();
+                    }
+                    (None, Some(mut r_page)) => {
+                        let (key, ref_page) = r_page.pop_first();
+                    }
+                    (Some(l_page), Some(r_page)) => unimplemented!(),
+                };
+
+                if self.separators.len() > MIN_KEYS_PER_PAGE {
                     RemoveResult::Removed
                 } else {
                     RemoveResult::Underflow
@@ -82,17 +109,22 @@ impl InternalNode {
         }
     }
 
-    pub fn get<W: PageStore>(&self, key: &[u8], storage: &mut W) -> Option<ValuePageLocation> {
+    pub fn get<W: PageStore>(&self, key: &[u8], storage: &mut W) -> Option<PageLocation> {
         let index = self.index_of(key);
         self.pages[index].load_page(storage).get(key, storage)
     }
 
-    pub fn add<W: PageStore>(&mut self, node: Node, storage: &mut W) -> PushResult {
-        let index = self.index_of(&node.key);
+    pub fn add<W: PageStore>(
+        &mut self,
+        key: &[u8],
+        value: PageLocation,
+        storage: &mut W,
+    ) -> PushResult {
+        let index = self.index_of(key);
 
         let page_loc = self.pages[index];
         let mut page = page_loc.load_page(storage);
-        let result = page.add(node.clone(), storage);
+        let result = page.add(key, value, storage);
         page_loc.write_page(&page, storage);
 
         match result {
@@ -135,11 +167,27 @@ impl InternalNode {
 }
 
 impl LeafNode {
+    pub fn pop_first(&mut self) -> (Box<[u8]>, PageLocation) {
+        let separator = self.keys.remove(0);
+        let page_loc = self.value_location.remove(0);
+
+        (separator, page_loc)
+    }
+
+    pub fn pop_last(&mut self) -> (Box<[u8]>, PageLocation) {
+        let separator = self.keys.remove(self.keys.len() - 1);
+        let page_loc = self.value_location.remove(self.value_location.len() - 1);
+
+        (separator, page_loc)
+    }
+
     pub fn remove(&mut self, key: &[u8]) -> RemoveResult {
-        let index = self.nodes.partition_point(|n| n.key.as_ref() < key);
-        if index < self.nodes.len() && self.nodes[index].key.as_ref() == key {
-            self.nodes.remove(index);
-            if self.nodes.len() > MIN_KEYS_PER_PAGE {
+        let index = self.keys.partition_point(|p_key| p_key.as_ref() < key);
+        if index < self.keys.len() && self.keys[index].as_ref() == key {
+            self.keys.remove(index);
+            self.value_location.remove(index);
+
+            if self.keys.len() > MIN_KEYS_PER_PAGE {
                 RemoveResult::Removed
             } else {
                 RemoveResult::Underflow
@@ -149,41 +197,60 @@ impl LeafNode {
         }
     }
 
-    pub fn get(&self, key: &[u8]) -> Option<ValuePageLocation> {
-        for node in &self.nodes {
-            if node.key.as_ref() == key {
-                return Some(node.value_location.clone());
+    pub fn get(&self, key: &[u8]) -> Option<PageLocation> {
+        for i in 0..self.keys.len() {
+            if self.keys[i].as_ref() == key {
+                return Some(self.value_location[i].clone());
             }
         }
+
         None
     }
 
-    pub fn add(&mut self, node: Node) -> PushResult {
-        let index = self.index_of(&node.key);
-        self.nodes.insert(index, node);
-        if self.nodes.len() >= MAX_KEYS_PER_PAGE {
+    pub fn add(&mut self, key: &[u8], value: PageLocation) -> PushResult {
+        let index = self.index_of(key);
+
+        self.keys.insert(index, key.into());
+        self.value_location.insert(index, value);
+
+        if self.keys.len() >= MAX_KEYS_PER_PAGE {
             let (page, key) = self.split();
             return PushResult::Overflow(OverFlowElement { key, page });
         }
+
         PushResult::Inserted
     }
 
     fn split(&mut self) -> (Page, Box<[u8]>) {
-        let r_nodes = self.nodes.split_off(MAX_KEYS_PER_PAGE / 2);
-        let m_node = r_nodes[0].clone();
-        return (Page::Leaf(LeafNode { nodes: r_nodes }), m_node.key);
+        let r_keys = self.keys.split_off(MAX_KEYS_PER_PAGE / 2);
+        let r_val_loc = self.value_location.split_off(MAX_KEYS_PER_PAGE / 2);
+
+        let m_key = r_keys[0].clone();
+
+        return (
+            Page::Leaf(LeafNode {
+                keys: r_keys,
+                value_location: r_val_loc,
+            }),
+            m_key,
+        );
     }
 
     fn index_of(&self, key: &[u8]) -> usize {
-        self.nodes.partition_point(|sep| sep.key.as_ref() <= key)
+        self.keys.partition_point(|sep| sep.as_ref() <= key)
     }
 }
 
 impl Page {
-    pub fn add<W: PageStore>(&mut self, adding: Node, storage: &mut W) -> PushResult {
+    pub fn add<W: PageStore>(
+        &mut self,
+        key: &[u8],
+        value: PageLocation,
+        storage: &mut W,
+    ) -> PushResult {
         match self {
-            Page::Internal(node) => node.add(adding, storage),
-            Page::Leaf(node) => node.add(adding),
+            Page::Internal(node) => node.add(key, value, storage),
+            Page::Leaf(node) => node.add(key, value),
         }
     }
 
@@ -194,7 +261,7 @@ impl Page {
         }
     }
 
-    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<ValuePageLocation> {
+    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<PageLocation> {
         match self {
             Page::Internal(internal) => internal.get(key, storage),
             Page::Leaf(leaf) => leaf.get(key),
@@ -207,6 +274,20 @@ impl Page {
             Page::Leaf(leaf) => leaf.remove(key),
         }
     }
+
+    pub fn pop_first(&mut self) -> (Box<[u8]>, Option<PageLocation>) {
+        match self {
+            Page::Internal(internal) => internal.pop_first(),
+            Page::Leaf(leaf) => leaf.pop_first(),
+        }
+    }
+
+    pub fn pop_last(&mut self) -> (Box<[u8]>, Option<PageLocation>) {
+        match self {
+            Page::Internal(internal) => internal.pop_last(),
+            Page::Leaf(leaf) => leaf.pop_last(),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -217,18 +298,22 @@ pub struct InternalNode {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LeafNode {
-    nodes: Vec<Node>,
+    keys: Vec<Box<[u8]>>,
+    value_location: Vec<PageLocation>,
 }
 
 impl PagingBtree {
     pub fn new(file_path: PathBuf) -> Self {
         Self {
             file_path: file_path.clone(),
-            root_page_location: PageLocation { start_offset: 0 },
+            root_page_location: PageLocation {
+                start_offset: 0,
+                size: 4096,
+            },
         }
     }
 
-    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<ValuePageLocation> {
+    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<PageLocation> {
         let page = self.root_page_location.load_page(storage);
         page.get(key, storage)
     }
@@ -236,19 +321,25 @@ impl PagingBtree {
     pub fn remove<W: PageStore>(&self, key: &[u8], storage: &mut W) -> Result<(), StorageError> {
         let mut root_page = self.root_page_location.load_page(storage);
 
-        root_page.remove(key, storage);
+        let result = root_page.remove(key, storage);
+        match result {
+            RemoveResult::NotFound => Ok(()),
+            RemoveResult::Removed => Ok(()),
+            RemoveResult::Underflow => unimplemented!(),
+        }?;
 
         Ok(())
     }
 
-    pub fn add_node<W: PageStore>(
+    pub fn add<W: PageStore>(
         &mut self,
-        node: Node,
+        key: &[u8],
+        value: PageLocation,
         storage: &mut W,
     ) -> Result<(), StorageError> {
         let mut root_page = self.root_page_location.load_page(storage);
 
-        let result = root_page.add(node, storage);
+        let result = root_page.add(key, value, storage);
         match result {
             PushResult::Overflow(overflow) => {
                 let right_page_loc = PageLocation::alloc(storage)?;
@@ -279,6 +370,7 @@ impl PageLocation {
         let offset = storage.seek(SeekFrom::End(0))?;
         Ok(Self {
             start_offset: offset,
+            size: 4096,
         })
     }
 
