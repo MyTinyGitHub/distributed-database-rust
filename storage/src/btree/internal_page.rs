@@ -95,7 +95,6 @@ impl Internal {
                     page.push_first(l_key, l_ref_page);
                     page_loc.write_page(&page, storage);
                 } else {
-                    println!("merge l_page");
                     let sep = self.separators.pop().unwrap();
 
                     l_page.merge_right(sep, &mut page);
@@ -104,7 +103,6 @@ impl Internal {
             }
             (None, Some(mut r_page)) => {
                 if r_page.size() > MIN_KEYS_PER_PAGE {
-                    println!("single r_page");
                     let (r_key, r_ref_page) = r_page.pop_first();
 
                     r_page_loc
@@ -116,7 +114,6 @@ impl Internal {
                     self.separators[0] = r_page.peek_first().into();
                     page.push_last(r_key, r_ref_page);
                 } else {
-                    println!("merge r_page");
                     let sep = self.separators.remove(0);
                     let _ = self.pages.remove(1);
 

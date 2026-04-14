@@ -141,41 +141,28 @@ mod tests {
 
     #[test]
     fn test_multiple_removes_maintain_order() {
-        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-        let mut tree = make_tree(&mut storage);
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
 
         // Insert many keys
         for i in 0u8..20 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, &mut storage).expect("insert failed");
+            tree.add(&[i], loc, storage).expect("insert failed");
         }
 
-        tree.root_page_location
-            .load_page(&mut storage)
-            .print(&mut storage);
+        tree.root_page_location.load_page(storage).print(storage);
 
         // Remove even numbers
         for i in (0u8..20).step_by(2) {
-            tree.remove(&[i], &mut storage).unwrap();
+            tree.remove(&[i], storage).unwrap();
             println!("removing {}", i);
-            tree.root_page_location
-                .load_page(&mut storage)
-                .print(&mut storage);
+            tree.root_page_location.load_page(storage).print(storage);
         }
 
         // Verify odd keys still exist and are sorted
-        let root = tree.root_page_location.load_page(&mut storage);
-        // let mut collected = Vec::new();
-        // collect_keys_in_order(&mut storage, &root, &mut collected);
+        check_is_root_sorted(&mut tree, storage);
 
-        // let mut sorted = collected.clone();
-        // sorted.sort();
-        // assert_eq!(collected, sorted, "remaining keys should be sorted");
-
-        // println!("{:?}", sorted);
-        //
         // Check only odd keys remain
-        root.print(&mut storage);
         for i in 0u8..20 {
             let result = tree.get(&[i], &mut storage);
             if i % 2 == 0 {
@@ -336,31 +323,32 @@ mod tests {
 
     #[test]
     fn test_remove_half_of_keys() {
-        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-        let mut tree = make_tree(&mut storage);
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
 
         let count = 30;
         for i in 0u8..count {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, &mut storage).expect("insert failed");
+            tree.add(&[i], loc, storage).expect("insert failed");
         }
 
         tree.root_page_location
             .load_page(&mut storage)
-            .print(&mut storage);
+            .print(storage);
 
         // Remove half
         for i in 0u8..count / 2 {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage);
             println!("removed {}", i);
         }
 
         tree.root_page_location
-            .load_page(&mut storage)
+            .load_page(storage)
             .print(&mut storage);
+
         // Check remaining
         for i in 0u8..count {
-            let result = tree.get(&[i], &mut storage);
+            let result = tree.get(&[i], storage);
             if i < count / 2 {
                 assert!(result.is_none(), "key {} should be removed", i);
             } else {
@@ -368,12 +356,6 @@ mod tests {
             }
         }
 
-        // Verify order
-        // let root = tree.root_page_location.load_page(&mut storage);
-        // let mut collected = Vec::new();
-        // collect_keys_in_order(&mut storage, &root, &mut collected);
-        // let mut sorted = collected.clone();
-        // sorted.sort();
-        // assert_eq!(collected, sorted);
+        check_is_root_sorted(&mut tree, storage);
     }
 }

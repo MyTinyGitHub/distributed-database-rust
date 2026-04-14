@@ -2,67 +2,66 @@ include!("btree_helper.rs");
 
 #[cfg(test)]
 mod tests {
-    // use std::io::{Cursor, Seek, SeekFrom};
-
-    // use storage::btree::Node;
-
-    // use super::*;
-
     // // ── Basic push ───────────────────────────────────────────────────────────────
 
-    // #[test]
-    // fn test_write_read_roundtrip() {
-    //     let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+    use std::io::{Cursor, Seek, SeekFrom};
 
-    //     let page = Page {
-    //         nodes: vec![Node {
-    //             key: Box::new([1]),
-    //             value: Box::new([1]),
-    //         }],
-    //         pages: None,
-    //     };
+    use storage::btree::{
+        leaf_page::Leaf,
+        location::{Location, RefPageLocation},
+        page::Page,
+    };
 
-    //     let loc = Location { start_offset: 0 };
-    //     loc.write_page(&page, &mut storage);
+    use crate::{create_loc, make_tree, PAGE_SIZE};
 
-    //     let loaded = loc.load_page(&mut storage);
-    //     assert_eq!(
-    //         loaded.nodes.len(),
-    //         1,
-    //         "roundtrip failed, got {} nodes",
-    //         loaded.nodes.len()
-    //     );
-    // }
+    #[test]
+    fn test_write_read_roundtrip() {
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
 
-    // #[test]
-    // fn test_no_split_before_threshold() {
-    //     let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-    //     let mut tree = make_tree();
+        let page = Page::Leaf(Leaf {
+            keys: vec![Box::new([1 as u8])],
+            values: vec![create_loc(1 as usize)],
+        });
 
-    //     for i in 0u8..6 {
-    //         tree.add_node(&mut storage, &[i], &[i])
-    //             .expect("insert failed");
-    //     }
+        let loc = Location::Page(RefPageLocation { start_offset: 0 });
 
-    //     let len = storage.seek(SeekFrom::End(0)).unwrap();
-    //     assert!(
-    //         len == PAGE_SIZE as u64,
-    //         "expected no split at 6 inserts but file grew, len: {}",
-    //         len
-    //     );
+        loc.write_page(&page, &mut storage);
 
-    //     let root = tree.root_page_location.load_page(&mut storage);
-    //     assert_eq!(
-    //         root.nodes.len(),
-    //         6,
-    //         "root should have 6 keys, got {}",
-    //         root.nodes.len()
-    //     );
-    //     assert!(
-    //         root.pages.is_none(),
-    //         "root should still be a leaf at 6 inserts"
-    //     );
-    // }
+        let loaded = loc.load_page(&mut storage);
+        assert_eq!(
+            loaded.size(),
+            1,
+            "roundtrip failed, got {} nodes",
+            loaded.size()
+        );
+    }
+
+    #[test]
+    fn test_no_split_before_threshold() {
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
+
+        for i in 0u8..6 {
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
+
+        let len = storage.seek(SeekFrom::End(0)).unwrap();
+
+        assert!(
+            len == PAGE_SIZE as u64,
+            "expected no split at 6 inserts but file grew, len: {}",
+            len
+        );
+
+        let root = tree.root_page_location.load_page(&mut storage);
+        assert_eq!(
+            root.size(),
+            6,
+            "root should have 6 keys, got {}",
+            root.size()
+        );
+    }
 
     // #[test]
     // fn test_split_on_eleventh_insert() {

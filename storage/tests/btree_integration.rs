@@ -9,7 +9,9 @@ mod tests {
 
     use std::{io::Cursor, ops::Add};
 
-    use crate::{create_loc, is_loc_equal, make_tree, PAGE_SIZE};
+    use storage::btree::btree::MAX_KEYS_PER_PAGE;
+
+    use crate::{check_is_root_sorted, create_loc, is_loc_equal, make_tree, PAGE_SIZE};
 
     #[test]
     fn test_reinsert_after_remove() {
@@ -179,19 +181,20 @@ mod tests {
 
     #[test]
     fn test_remove_separator_key() {
-        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-        let mut tree = make_tree();
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
 
         // insert exactly enough to split — the promoted key is the separator
         for i in 0u8..=MAX_KEYS_PER_PAGE as u8 {
-            tree.add_node(&mut storage, &[i], &[i])
-                .expect("insert failed");
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
         }
 
         // the root has exactly 1 separator key — find and remove it
         let root = tree.root_page_location.load_page(&mut storage);
-        assert_eq!(root.nodes.len(), 1, "root should have 1 separator");
-        let separator_key = root.nodes[0].key.clone();
+        assert_eq!(root.size(), 1, "root should have 1 separator");
+
+        let separator_key = root.peek_first().clone();
 
         tree.remove(&separator_key, &mut storage);
 
@@ -205,195 +208,170 @@ mod tests {
                 );
             }
         }
-
         // verify order is still maintained
-        let root = tree.root_page_location.load_page(&mut storage);
-        let mut collected = Vec::new();
-        collect_keys_in_order(&mut storage, &root, &mut collected);
-        let mut sorted = collected.clone();
-        sorted.sort();
-
-        assert_eq!(
-            collected, sorted,
-            "tree out of order after separator removal"
-        );
     }
 
-    // // ── Random order operations ───────────────────────────────────────────────────
+    // ── Random order operations ───────────────────────────────────────────────────
 
-    // #[test]
-    // fn test_shuffled_remove_order() {
-    //     let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-    //     let mut tree = make_tree();
+    #[test]
+    fn test_shuffled_remove_order() {
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
 
-    //     for i in 0u8..20 {
-    //         tree.add_node(&mut storage, &[i], &[i])
-    //             .expect("insert failed");
-    //     }
+        for i in 0u8..20 {
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
 
-    //     // remove in non-sequential order
-    //     let remove_order: Vec<u8> = vec![15, 3, 18, 0, 7, 11, 4, 19, 1, 9];
-    //     for &k in &remove_order {
-    //         tree.remove(&[k], &mut storage);
-    //     }
+        // remove in non-sequential order
+        let remove_order: Vec<u8> = vec![15, 3, 18, 0, 7, 11, 4, 19, 1, 9];
+        for &k in &remove_order {
+            tree.remove(&[k], &mut storage);
+        }
 
-    //     // verify removed keys are gone
-    //     for &k in &remove_order {
-    //         assert!(
-    //             tree.get(&[k], &mut storage).is_none(),
-    //             "shuffled-removed key {} should be gone",
-    //             k
-    //         );
-    //     }
+        // verify removed keys are gone
+        for &k in &remove_order {
+            assert!(
+                tree.get(&[k], storage).is_none(),
+                "shuffled-removed key {} should be gone",
+                k
+            );
+        }
 
-    //     // verify remaining keys are still present and sorted
-    //     let root = tree.root_page_location.load_page(&mut storage);
-    //     let mut collected = Vec::new();
-    //     collect_keys_in_order(&mut storage, &root, &mut collected);
+        check_is_root_sorted(&mut tree, storage);
 
-    //     let mut sorted = collected.clone();
-    //     sorted.sort();
-    //     assert_eq!(
-    //         collected, sorted,
-    //         "tree out of order after shuffled removes"
-    //     );
-
-    //     // verify exact remaining set
-    //     let removed_set: std::collections::HashSet<u8> = remove_order.iter().cloned().collect();
-    //     for i in 0u8..20 {
-    //         let result = tree.get(&[i], &mut storage);
-    //         if removed_set.contains(&i) {
-    //             assert!(result.is_none(), "key {} should be removed", i);
-    //         } else {
-    //             assert!(result.is_some(), "key {} should remain", i);
-    //         }
-    //     }
-    // }
+        // verify exact remaining set
+        let removed_set: std::collections::HashSet<u8> = remove_order.iter().cloned().collect();
+        for i in 0u8..20 {
+            let result = tree.get(&[i], &mut storage);
+            if removed_set.contains(&i) {
+                assert!(result.is_none(), "key {} should be removed", i);
+            } else {
+                assert!(result.is_some(), "key {} should remain", i);
+            }
+        }
+    }
 
     // // ── Interleaved inserts and removes ──────────────────────────────────────────
 
-    // #[test]
-    // fn test_interleaved_insert_remove() {
-    //     let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-    //     let mut tree = make_tree();
+    #[test]
+    fn test_interleaved_insert_remove() {
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
 
-    //     // interleave inserts and removes in batches
-    //     for i in 0u8..15 {
-    //         tree.add_node(&mut storage, &[i], &[i])
-    //             .expect("insert failed");
-    //     }
-    //     for i in 0u8..5 {
-    //         tree.remove(&[i], &mut storage);
-    //     }
-    //     for i in 15u8..30 {
-    //         tree.add_node(&mut storage, &[i], &[i])
-    //             .expect("insert failed");
-    //     }
-    //     for i in 5u8..10 {
-    //         tree.remove(&[i], &mut storage);
-    //     }
-    //     for i in 30u8..45 {
-    //         tree.add_node(&mut storage, &[i], &[i])
-    //             .expect("insert failed");
-    //     }
+        // interleave inserts and removes in batches
+        for i in 0u8..15 {
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
 
-    //     // verify final state: 0-9 removed, 10-44 present
-    //     for i in 0u8..10 {
-    //         assert!(
-    //             tree.get(&[i], &mut storage).is_none(),
-    //             "key {} should be removed",
-    //             i
-    //         );
-    //     }
-    //     for i in 10u8..45 {
-    //         assert!(
-    //             tree.get(&[i], &mut storage).is_some(),
-    //             "key {} should exist",
-    //             i
-    //         );
-    //     }
+        for i in 0u8..5 {
+            tree.remove(&[i], &mut storage);
+        }
 
-    //     // verify sorted order
-    //     let root = tree.root_page_location.load_page(&mut storage);
-    //     let mut collected = Vec::new();
-    //     collect_keys_in_order(&mut storage, &root, &mut collected);
-    //     let mut sorted = collected.clone();
-    //     sorted.sort();
-    //     assert_eq!(collected, sorted, "tree out of order after interleaved ops");
-    // }
+        for i in 15u8..30 {
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
+
+        for i in 5u8..10 {
+            tree.remove(&[i], &mut storage);
+        }
+
+        for i in 30u8..45 {
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
+
+        // verify final state: 0-9 removed, 10-44 present
+        for i in 0u8..10 {
+            assert!(
+                tree.get(&[i], &mut storage).is_none(),
+                "key {} should be removed",
+                i
+            );
+        }
+        for i in 10u8..45 {
+            assert!(
+                tree.get(&[i], &mut storage).is_some(),
+                "key {} should exist",
+                i
+            );
+        }
+
+        // verify sorted order
+        check_is_root_sorted(&mut tree, storage);
+    }
 
     // // ── Page alignment invariant ─────────────────────────────────────────────────
 
-    // #[test]
-    // fn test_page_alignment_after_removes() {
-    //     use std::io::{Seek, SeekFrom};
+    #[test]
+    fn test_page_alignment_after_removes() {
+        use std::io::{Seek, SeekFrom};
 
-    //     let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-    //     let mut tree = make_tree();
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
 
-    //     for i in 0u8..50 {
-    //         tree.add_node(&mut storage, &[i], &[i])
-    //             .expect("insert failed");
-    //     }
-    //     for i in 0u8..25 {
-    //         tree.remove(&[i], &mut storage);
-    //     }
+        for i in 0u8..50 {
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
 
-    //     let len = storage.seek(SeekFrom::End(0)).unwrap();
-    //     assert_eq!(
-    //         len % PAGE_SIZE as u64,
-    //         0,
-    //         "file not page-aligned after removes, len: {}",
-    //         len
-    //     );
-    // }
+        for i in 0u8..25 {
+            tree.remove(&[i], &mut storage);
+        }
+
+        let len = storage.seek(SeekFrom::End(0)).unwrap();
+        assert_eq!(
+            len % PAGE_SIZE as u64,
+            0,
+            "file not page-aligned after removes, len: {}",
+            len
+        );
+    }
 
     // // ── Full cycle stress ─────────────────────────────────────────────────────────
 
-    // #[test]
-    // fn test_full_cycle_insert_remove_verify() {
-    //     let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
-    //     let mut tree = make_tree();
+    #[test]
+    fn test_full_cycle_insert_remove_verify() {
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
 
-    //     let total = (MAX_KEYS_PER_PAGE * 8) as u8;
+        let total = (MAX_KEYS_PER_PAGE * 8) as u8;
 
-    //     // insert all
-    //     for i in 0u8..total {
-    //         tree.add_node(&mut storage, &[i], &[i.wrapping_mul(2)])
-    //             .expect("insert failed");
-    //     }
+        // insert all
+        for i in 0u8..total {
+            let loc = create_loc(i.wrapping_mul(2) as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
 
-    //     // remove first third
-    //     for i in 0u8..total / 3 {
-    //         tree.remove(&[i], &mut storage);
-    //     }
+        // remove first third
+        for i in 0u8..total / 3 {
+            tree.remove(&[i], &mut storage);
+        }
 
-    //     // remove last third
-    //     for i in (total * 2 / 3)..total {
-    //         tree.remove(&[i], &mut storage);
-    //     }
+        // remove last third
+        for i in (total * 2 / 3)..total {
+            tree.remove(&[i], &mut storage);
+        }
 
-    //     // only middle third should remain
-    //     for i in 0u8..total {
-    //         let result = tree.get(&[i], &mut storage);
-    //         if i < total / 3 || i >= total * 2 / 3 {
-    //             assert!(result.is_none(), "key {} should be removed", i);
-    //         } else {
-    //             assert_eq!(
-    //                 result.unwrap().as_ref(),
-    //                 &[i.wrapping_mul(2)],
-    //                 "key {} has wrong value after full cycle",
-    //                 i
-    //             );
-    //         }
-    //     }
+        // only middle third should remain
+        for i in 0u8..total {
+            let result = tree.get(&[i], &mut storage);
+            if i < total / 3 || i >= total * 2 / 3 {
+                assert!(result.is_none(), "key {} should be removed", i);
+            } else {
+                let l_loc = result.unwrap();
+                let r_loc = create_loc(i.wrapping_mul(2) as usize);
+                assert!(
+                    is_loc_equal(l_loc, r_loc),
+                    "key {} has wrong value after full cycle",
+                    i
+                );
+            }
+        }
 
-    //     // final order check
-    //     let root = tree.root_page_location.load_page(&mut storage);
-    //     let mut collected = Vec::new();
-    //     collect_keys_in_order(&mut storage, &root, &mut collected);
-    //     let mut sorted = collected.clone();
-    //     sorted.sort();
-    //     assert_eq!(collected, sorted, "tree out of order after full cycle");
-    // }
+        // final order check
+        check_is_root_sorted(&mut tree, storage);
+    }
 }
