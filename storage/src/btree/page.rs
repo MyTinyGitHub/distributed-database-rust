@@ -39,10 +39,32 @@ impl Page {
         }
     }
 
+    pub fn print<R: PageStore>(&self, storage: &mut R) {
+        match self {
+            Page::Internal(n) => {
+                println!("{:?}", n.separators);
+                println!();
+
+                for i in 0..n.pages.len() {
+                    print!("child: {i}");
+                    n.pages[i].load_page(storage).print(storage);
+                }
+            }
+            Page::Leaf(n) => println!("{:?}", n.keys),
+        };
+    }
+
     pub fn peek_first(&self) -> &[u8] {
         match self {
             Page::Internal(n) => n.separators[0].as_ref(),
             Page::Leaf(n) => n.keys[0].as_ref(),
+        }
+    }
+
+    pub fn peek_last(&self) -> &[u8] {
+        match self {
+            Page::Internal(n) => n.separators.last().unwrap().as_ref(),
+            Page::Leaf(n) => n.keys.last().unwrap().as_ref(),
         }
     }
 
@@ -75,11 +97,13 @@ impl Page {
     pub fn merge_right(&mut self, sep: Box<[u8]>, right: &mut Page) {
         match (self, right) {
             (Page::Internal(l), Page::Internal(r)) => {
+                println!("merging left: {:?}, right {:?}", l.separators, r.separators);
                 l.separators.push(sep);
                 l.separators.append(&mut r.separators);
                 l.pages.append(&mut r.pages);
             }
             (Page::Leaf(l), Page::Leaf(r)) => {
+                println!("merging leafs left: {:?}, right {:?}", l.keys, r.keys);
                 l.keys.append(&mut r.keys);
                 l.values.append(&mut r.values);
             }

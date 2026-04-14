@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::{
     btree::{
         internal_page::Internal,
+        leaf_page::Leaf,
         location::{Location, PageStore, RefPageLocation},
         page::{Page, PushResult, RemoveResult},
     },
@@ -35,6 +36,21 @@ impl PagingBtree {
         let mut root_page = self.root_page_location.load_page(storage);
 
         let result = root_page.remove(key, storage);
+
+        match result {
+            RemoveResult::NotFound => println!("root notfound"),
+            RemoveResult::Underflow => {
+                println!("root underflow");
+                // if let Page::Leaf(_) = root_page {
+                //     return Ok(());
+                // }
+
+                // if let Page::Internal(page) = &mut root_page {
+                //     page.handle_underflow(key, storage);
+                // };
+            }
+            RemoveResult::Removed => println!("root removed"),
+        }
         //HANDLE UNDERFLOW IN PARENT
 
         self.root_page_location.write_page(&root_page, storage);

@@ -86,6 +86,7 @@ mod tests {
         let mut tree = make_tree(&mut storage);
 
         // use distinct key != value so we know we're reading the right value
+        //
         for i in 0u8..11 {
             let loc = create_loc(i as usize);
             tree.add(&[i], loc, &mut storage).expect("insert failed");
@@ -115,11 +116,15 @@ mod tests {
             tree.add(&[i], loc, &mut storage).expect("insert failed");
         }
 
+        tree.root_page_location
+            .load_page(&mut storage)
+            .print(&mut storage);
+
         for i in 0u8..count {
             let result = tree.get(&[i], &mut storage);
             let r_loc = create_loc(i.wrapping_add(50) as usize);
-            let l_loc = result.unwrap();
             assert!(result.is_some(), "key {} not found", i);
+            let l_loc = result.unwrap();
             assert!(is_loc_equal(l_loc, r_loc), "wrong value for key {}", i);
         }
     }

@@ -39,11 +39,14 @@ impl Leaf {
             self.values.remove(index);
 
             if self.keys.len() > MIN_KEYS_PER_PAGE {
+                println!("leaf-removed");
                 RemoveResult::Removed
             } else {
+                println!("leaf-remove underflow {:?}", self.keys.len());
                 RemoveResult::Underflow
             }
         } else {
+            println!("leaf-remove notfound");
             RemoveResult::NotFound
         }
     }
@@ -77,6 +80,20 @@ impl Leaf {
         let r_val_loc = self.values.split_off(MAX_KEYS_PER_PAGE / 2);
 
         let m_key = r_keys[0].clone();
+
+        println!("split element {:?}", m_key);
+
+        println!(
+            "sizes after split keys {} values {}",
+            self.keys.len(),
+            self.values.len()
+        );
+
+        println!(
+            "sizes after split keys {} values {}",
+            r_keys.len(),
+            r_val_loc.len()
+        );
 
         return (
             Page::Leaf(Leaf {

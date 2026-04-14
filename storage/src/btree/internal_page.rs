@@ -42,107 +42,132 @@ impl Internal {
             RemoveResult::NotFound => RemoveResult::NotFound,
             RemoveResult::Removed => RemoveResult::Removed,
             RemoveResult::Underflow => {
-                let r_page_loc = self.pages.get(index + 1);
-                let l_page_loc = if index > 0 {
-                    self.pages.get(index - 1)
-                } else {
-                    None
-                };
-
-                let r_page = match r_page_loc {
-                    None => None,
-                    Some(loc) => Some(loc.load_page(storage)),
-                };
-
-                let l_page = match l_page_loc {
-                    None => None,
-                    Some(loc) => Some(loc.load_page(storage)),
-                };
-
-                match (l_page, r_page) {
-                    (None, None) => unreachable!(),
-                    (Some(mut l_page), None) => {
-                        if l_page.size() > MIN_KEYS_PER_PAGE {
-                            let (l_key, l_ref_page) = l_page.pop_last();
-                            l_page_loc
-                                .expect("page was loaded with this location, cannot be None")
-                                .write_page(&l_page, storage);
-
-                            let sep_size = self.size();
-                            self.separators[sep_size - 1] = l_key.clone();
-
-                            page.push_first(l_key, l_ref_page);
-                            page_loc.write_page(&page, storage);
-                        } else {
-                            let sep = self.separators.pop().unwrap();
-
-                            l_page.merge_right(sep, &mut page);
-                            l_page_loc.unwrap().write_page(&l_page, storage);
-                        }
-                    }
-                    (None, Some(mut r_page)) => {
-                        if r_page.size() > MIN_KEYS_PER_PAGE {
-                            let (r_key, r_ref_page) = r_page.pop_first();
-
-                            r_page_loc
-                                .expect("page was loaded with this location, cannot be None")
-                                .write_page(&r_page, storage);
-
-                            // self.separators[0] = r_key.clone();
-                            // self.separators[1] = r_page.peek_first().into();
-                            self.separators[0] = r_page.peek_first().into();
-
-                            page.push_last(r_key, r_ref_page);
-                        } else {
-                            let sep = self.separators.remove(0);
-                            let _ = self.pages.remove(1);
-
-                            page.merge_right(sep, &mut r_page);
-                        }
-                    }
-                    (Some(mut l_page), Some(mut r_page)) => {
-                        if r_page.size() > MIN_KEYS_PER_PAGE {
-                            // borrow from right
-                            let (r_key, r_ref_page) = r_page.pop_first();
-                            r_page_loc
-                                .expect("page was loaded with this location, cannot be None")
-                                .write_page(&r_page, storage);
-
-                            println!("deleting key: {:?}", key);
-                            println!("separators: {:?}", self.separators);
-                            println!("pages: {:?}", self.pages.len());
-
-                            // self.separators[index] = r_key.clone();
-                            // self.separators[index + 1] = r_page.peek_first().into();
-                            self.separators[index] = r_page.peek_first().into();
-
-                            page.push_last(r_key, r_ref_page);
-                        } else if l_page.size() > MIN_KEYS_PER_PAGE {
-                            // borrow from left
-                            let (l_key, l_ref_page) = l_page.pop_last();
-                            l_page_loc
-                                .expect("page was loaded with this location, cannot be None")
-                                .write_page(&l_page, storage);
-                            self.separators[index - 1] = l_key.clone();
-                            page.push_first(l_key, l_ref_page);
-                        } else {
-                            // merge with right
-                            let sep = self.separators.remove(index);
-                            let _ = self.pages.remove(index + 1);
-                            page.merge_right(sep, &mut r_page);
-                        }
-                    }
-                };
-
-                page_loc.write_page(&page, storage);
+                self.handle_underflow(key, storage);
 
                 if self.separators.len() > MIN_KEYS_PER_PAGE {
+                    println!("internal removed {:?}", self.separators);
                     RemoveResult::Removed
                 } else {
+                    println!("internal underflow {:?}", self.separators);
                     RemoveResult::Underflow
                 }
             }
         }
+    }
+
+    pub fn handle_underflow<W: PageStore>(&mut self, key: &[u8], storage: &mut W) {
+        let index = self.index_of(key);
+        let page_loc = self.pages[index];
+        let mut page = page_loc.load_page(storage);
+
+        println!("underflow index {}", index);
+
+        let r_page_loc = self.pages.get(index + 1);
+        let l_page_loc = if index > 0 {
+            self.pages.get(index - 1)
+        } else {
+            None
+        };
+
+        let r_page = match r_page_loc {
+            None => None,
+            Some(loc) => Some(loc.load_page(storage)),
+        };
+
+        let l_page = match l_page_loc {
+            None => None,
+            Some(loc) => Some(loc.load_page(storage)),
+        };
+
+        match (l_page, r_page) {
+            (None, None) => unreachable!(),
+            (Some(mut l_page), None) => {
+                if l_page.size() > MIN_KEYS_PER_PAGE {
+                    println!("single l_page");
+                    let (l_key, l_ref_page) = l_page.pop_last();
+                    l_page_loc
+                        .expect("page was loaded with this location, cannot be None")
+                        .write_page(&l_page, storage);
+
+                    let sep_size = self.size();
+                    self.separators[sep_size - 1] = l_key.clone();
+
+                    page.push_first(l_key, l_ref_page);
+                    page_loc.write_page(&page, storage);
+                } else {
+                    println!("merge l_page");
+                    let sep = self.separators.pop().unwrap();
+
+                    l_page.merge_right(sep, &mut page);
+                    l_page_loc.unwrap().write_page(&l_page, storage);
+                }
+            }
+            (None, Some(mut r_page)) => {
+                if r_page.size() > MIN_KEYS_PER_PAGE {
+                    println!("single r_page");
+                    let (r_key, r_ref_page) = r_page.pop_first();
+
+                    r_page_loc
+                        .expect("page was loaded with this location, cannot be None")
+                        .write_page(&r_page, storage);
+
+                    // self.separators[0] = r_key.clone();
+                    // self.separators[1] = r_page.peek_first().into();
+                    self.separators[0] = r_page.peek_first().into();
+                    page.push_last(r_key, r_ref_page);
+                } else {
+                    println!("merge r_page");
+                    let sep = self.separators.remove(0);
+                    let _ = self.pages.remove(1);
+
+                    page.print(storage);
+                    page.merge_right(sep, &mut r_page);
+
+                    // self.separators[0] = page.peek_last().into();
+                }
+            }
+            (Some(mut l_page), Some(mut r_page)) => {
+                if r_page.size() > MIN_KEYS_PER_PAGE {
+                    println!("both r_page");
+                    // borrow from right
+                    let (r_key, r_ref_page) = r_page.pop_first();
+                    r_page_loc
+                        .expect("page was loaded with this location, cannot be None")
+                        .write_page(&r_page, storage);
+
+                    println!("deleting key: {:?}", key);
+                    println!("separators: {:?}", self.separators);
+                    println!("pages: {:?}", self.pages.len());
+
+                    // self.separators[index] = r_key.clone();
+                    // self.separators[index + 1] = r_page.peek_first().into();
+                    self.separators[index] = r_page.peek_first().into();
+
+                    page.push_last(r_key, r_ref_page);
+                } else if l_page.size() > MIN_KEYS_PER_PAGE {
+                    println!("both l_page");
+                    // borrow from left
+                    let (l_key, l_ref_page) = l_page.pop_last();
+
+                    l_page_loc
+                        .expect("page was loaded with this location, cannot be None")
+                        .write_page(&l_page, storage);
+
+                    self.separators[index] = l_key.clone();
+                    page.push_first(l_key, l_ref_page);
+                } else {
+                    println!("both merge r_page");
+                    // merge with right
+                    let sep = self.separators.remove(index);
+                    let _ = self.pages.remove(index + 1);
+
+                    page.print(storage);
+                    page.merge_right(sep, &mut r_page);
+                }
+            }
+        };
+
+        page_loc.write_page(&page, storage);
     }
 
     pub fn get<W: PageStore>(&self, key: &[u8], storage: &mut W) -> Option<Location> {
@@ -168,7 +193,7 @@ impl Internal {
         let index = self.index_of(key);
 
         println!(
-            "Sep size: {:?} Page size: {} index: {}",
+            "Sep: {:?} Page size: {} index: {}",
             self.separators,
             self.pages.len(),
             index
@@ -205,6 +230,7 @@ impl Internal {
         let mut r_separators = self.separators.split_off(self.separators.len() / 2);
         let r_pages = self.pages.split_off(self.pages.len() / 2);
 
+        // let key = r_separators.remove(0);
         let key = r_separators.remove(0);
 
         return (
@@ -217,6 +243,8 @@ impl Internal {
     }
 
     fn index_of(&self, key: &[u8]) -> usize {
-        self.separators.partition_point(|sep| sep.as_ref() <= key)
+        let index = self.separators.partition_point(|sep| sep.as_ref() <= key);
+        println!("key: {:?}, index: {}", key, index);
+        index
     }
 }
