@@ -123,6 +123,33 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_all_keys_backwards() {
+        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(storage);
+
+        for i in 0u8..100 {
+            let loc = create_loc(i as usize);
+            tree.add(&[i], loc, storage).expect("insert failed");
+        }
+
+        // Remove all keys
+        for i in 0u8..100 {
+            println!("removing {}", i);
+            tree.root_page_location.load_page(storage).print(storage);
+            tree.remove(&[100 - i - 1], &mut storage);
+        }
+
+        // Tree should be empty
+        for i in 0u8..5 {
+            assert!(
+                tree.get(&[i], &mut storage).is_none(),
+                "key {} should be removed",
+                i
+            );
+        }
+    }
+
+    #[test]
     fn test_remove_then_get_returns_none() {
         let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
         let mut tree = make_tree(&mut storage);

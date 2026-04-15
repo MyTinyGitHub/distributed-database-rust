@@ -347,15 +347,21 @@ mod tests {
 
         // remove first third
         for i in 0u8..total / 3 {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage).unwrap();
+            tree.root_page_location.load_page(storage).print(storage);
         }
+
+        tree.root_page_location.load_page(storage).print(storage);
 
         // remove last third
         for i in (total * 2 / 3)..total {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage).unwrap();
+            tree.root_page_location.load_page(storage).print(storage);
         }
 
         // only middle third should remain
+
+        tree.root_page_location.load_page(storage).print(storage);
         for i in 0u8..total {
             let result = tree.get(&[i], &mut storage);
             if i < total / 3 || i >= total * 2 / 3 {

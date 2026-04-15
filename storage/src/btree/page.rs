@@ -54,6 +54,13 @@ impl Page {
         };
     }
 
+    pub fn peek_first_location(&self) -> Location {
+        match self {
+            Page::Internal(n) => n.pages[0].clone(),
+            Page::Leaf(n) => n.values[0].clone(),
+        }
+    }
+
     pub fn peek_first(&self) -> &[u8] {
         match self {
             Page::Internal(n) => n.separators[0].as_ref(),

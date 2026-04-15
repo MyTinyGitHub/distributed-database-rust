@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub const MAX_KEYS_PER_PAGE: usize = 9;
-pub const MIN_KEYS_PER_PAGE: usize = MAX_KEYS_PER_PAGE / 2 - 1;
+pub const MIN_KEYS_PER_PAGE: usize = MAX_KEYS_PER_PAGE / 2;
 
 #[derive(Debug)]
 pub struct PagingBtree {
@@ -40,7 +40,16 @@ impl PagingBtree {
         match result {
             RemoveResult::NotFound => println!("root notfound"),
             RemoveResult::Underflow => {
-                println!("root underflow");
+                match &root_page {
+                    Page::Leaf(_) => println!("underflow in leaf"),
+                    Page::Internal(internal) => {
+                        if internal.pages.len() == 1 {
+                            println!("replacing root");
+                            root_page = internal.pages.first().unwrap().load_page(storage);
+                        }
+                    }
+                }
+
                 // if let Page::Leaf(_) = root_page {
                 //     return Ok(());
                 // }
@@ -49,7 +58,19 @@ impl PagingBtree {
                 //     page.handle_underflow(key, storage);
                 // };
             }
-            RemoveResult::Removed => println!("root removed"),
+            RemoveResult::Removed => {
+                println!("root removed");
+
+                match &root_page {
+                    Page::Leaf(_) => println!("underflow in leaf"),
+                    Page::Internal(internal) => {
+                        println!("replacing root");
+                        if internal.pages.len() == 1 {
+                            root_page = internal.pages.first().unwrap().load_page(storage);
+                        }
+                    }
+                }
+            }
         }
         //HANDLE UNDERFLOW IN PARENT
 

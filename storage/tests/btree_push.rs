@@ -209,16 +209,19 @@ mod tests {
         let storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
         let mut tree = make_tree(storage);
 
-        let count = (MAX_KEYS_PER_PAGE * 5) as u8;
+        let count = (MAX_KEYS_PER_PAGE * 10) as u8;
         for i in 0u8..count {
             let loc = create_loc(i as usize);
             tree.add(&[i], loc, storage).expect("insert failed");
         }
 
+        tree.root_page_location.load_page(storage).print(storage);
+
         for i in 0u8..count {
+            let loc = create_loc(i as usize);
             let result = tree.get(&[i], storage);
             assert!(
-                result.is_some(),
+                is_loc_equal(loc, result.unwrap()),
                 "key {} not found after multiple splits",
                 i
             );
