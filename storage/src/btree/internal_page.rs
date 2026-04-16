@@ -55,6 +55,182 @@ impl Internal {
         }
     }
 
+    fn underflow_both_right_merge<W: PageStore>(
+        &mut self,
+        page: &mut Page,
+        index: usize,
+        r_page: &mut Page,
+        storage: &mut W,
+    ) {
+        println!("both merge r_page");
+
+        let sep = match r_page {
+            Page::Leaf(_) => r_page.peek_first().into(),
+            Page::Internal(_) => r_page
+                .peek_first_location()
+                .load_page(storage)
+                .peek_first()
+                .into(),
+        };
+
+        let _ = self.separators.remove(index);
+        let _ = self.pages.remove(index + 1);
+
+        page.print(storage);
+        page.merge_right(sep, r_page);
+    }
+
+    fn underflow_both_right<W: PageStore>(
+        &mut self,
+        page: &mut Page,
+        index: usize,
+        r_page: &mut Page,
+        r_page_loc: &Location,
+        storage: &mut W,
+    ) {
+        println!("both r_page");
+        // borrow from right
+        let (r_key, r_ref_page) = r_page.pop_first();
+        r_page_loc.write_page(&r_page, storage);
+
+        self.separators[index] = r_page.peek_first().into();
+
+        page.push_last(r_key, r_ref_page);
+    }
+
+    fn underflow_both_left<W: PageStore>(
+        &mut self,
+        page: &mut Page,
+        index: usize,
+        l_page: &mut Page,
+        l_page_loc: &Location,
+        storage: &mut W,
+    ) {
+        println!("both l_page");
+
+        let (l_key, l_ref_page) = l_page.pop_last();
+
+        l_page_loc.write_page(&l_page, storage);
+
+        self.separators[index - 1] = l_key.clone();
+        page.push_first(l_key, l_ref_page);
+    }
+
+    fn underflow_both<W: PageStore>(
+        &mut self,
+        page: &mut Page,
+        index: usize,
+        l_page: &mut Page,
+        l_page_loc: &Location,
+        r_page: &mut Page,
+        r_page_loc: &Location,
+        storage: &mut W,
+    ) {
+        if r_page.size() - 1 > MIN_KEYS_PER_PAGE {
+            self.underflow_both_right(page, index, r_page, r_page_loc, storage);
+        } else if l_page.size() - 1 > MIN_KEYS_PER_PAGE {
+            self.underflow_both_left(page, index, l_page, l_page_loc, storage);
+        } else {
+            self.underflow_both_right_merge(page, index, r_page, storage);
+        }
+    }
+
+    fn underflow_single_left<W: PageStore>(
+        &mut self,
+        page: &mut Page,
+        l_page: &mut Page,
+        l_page_loc: &Location,
+        storage: &mut W,
+    ) {
+        if l_page.size() - 1 > MIN_KEYS_PER_PAGE {
+            println!("single l_page");
+            let (l_key, l_ref_page) = l_page.pop_last();
+            l_page_loc.write_page(&l_page, storage);
+
+            match page {
+                Page::Leaf(leaf) => {
+                    leaf.keys.push(l_key.clone());
+                    leaf.values.push(l_ref_page);
+
+                    println!("taking leaf separator {:?}", l_key);
+
+                    let sep_size = self.size();
+                    self.separators[sep_size - 1] = l_key;
+                }
+                Page::Internal(int) => {
+                    let sep_size = self.size();
+
+                    let s = self.separators[sep_size - 1].clone();
+
+                    int.pages.push(l_ref_page);
+                    int.separators.push(s.clone());
+                }
+            };
+        } else {
+            println!("single merge l_page");
+
+            let sep = match &page {
+                Page::Leaf(_) => self.separators.pop().unwrap(),
+                Page::Internal(internal) => self.separators.pop().unwrap(),
+            };
+
+            let _ = self.pages.pop().unwrap();
+
+            l_page.merge_right(sep, page);
+        }
+    }
+
+    fn underflow_single_right<W: PageStore>(
+        &mut self,
+        page: &mut Page,
+        r_page: &mut Page,
+        r_page_loc: &Location,
+        storage: &mut W,
+    ) {
+        if r_page.size() - 1 > MIN_KEYS_PER_PAGE {
+            println!("single r_page");
+
+            let (r_key, r_ref_page) = r_page.pop_first();
+
+            r_page_loc.write_page(&r_page, storage);
+
+            match page {
+                Page::Leaf(leaf) => {
+                    let s = r_page.peek_first().into();
+
+                    leaf.keys.push(r_key);
+                    leaf.values.push(r_ref_page);
+
+                    println!("taking leaf separator {:?}", s);
+
+                    self.separators[0] = s;
+                }
+                Page::Internal(int) => {
+                    let s = self.separators[0].clone();
+
+                    int.pages.push(r_ref_page);
+                    int.separators.push(s.clone());
+                }
+            };
+        } else {
+            println!("single merge r_page");
+
+            let sep = match r_page {
+                Page::Leaf(_) => r_page.peek_first().into(),
+                Page::Internal(_) => r_page
+                    .peek_first_location()
+                    .load_page(storage)
+                    .peek_first()
+                    .into(),
+            };
+
+            let _ = self.separators.remove(0);
+            let _ = self.pages.remove(1);
+
+            page.merge_right(sep, r_page);
+        }
+    }
+
     pub fn handle_underflow<W: PageStore>(&mut self, key: &[u8], storage: &mut W) {
         let index = self.index_of(key);
         let page_loc = self.pages[index];
@@ -62,7 +238,7 @@ impl Internal {
 
         println!("underflow index {}", index);
 
-        let r_page_loc = self.pages.get(index + 1);
+        let r_page_loc = self.pages.get(index + 1).copied();
         let l_page_loc = if index > 0 {
             self.pages.get(index - 1).copied()
         } else {
@@ -82,119 +258,29 @@ impl Internal {
         match (l_page, r_page) {
             (None, None) => unreachable!(),
             (None, Some(mut r_page)) => {
-                if r_page.size() - 1 > MIN_KEYS_PER_PAGE {
-                    println!("single r_page");
-
-                    let (r_key, r_ref_page) = r_page.pop_first();
-
-                    r_page_loc
-                        .expect("page was loaded with this location, cannot be None")
-                        .write_page(&r_page, storage);
-
-                    match &mut page {
-                        Page::Leaf(leaf) => {
-                            let s = r_page.peek_first().into();
-
-                            leaf.keys.push(r_key);
-                            leaf.values.push(r_ref_page);
-
-                            println!("taking leaf separator {:?}", s);
-
-                            self.separators[0] = s;
-                        }
-                        Page::Internal(int) => {
-                            let s = self.separators[0].clone();
-
-                            int.pages.push(r_ref_page);
-                            int.separators.push(s.clone());
-
-                            self.separators[0] = s;
-                        }
-                    };
-                } else {
-                    println!("single merge r_page");
-
-                    let sep = match r_page {
-                        Page::Leaf(_) => r_page.peek_first().into(),
-                        Page::Internal(_) => r_page
-                            .peek_first_location()
-                            .load_page(storage)
-                            .peek_first()
-                            .into(),
-                    };
-
-                    let _ = self.separators.remove(0);
-                    let _ = self.pages.remove(1);
-
-                    page.print(storage);
-                    page.merge_right(sep, &mut r_page);
-
-                    // self.separators[0] = page.peek_last().into();
+                if let Some(mut r_page_loc) = r_page_loc {
+                    self.underflow_single_right(&mut page, &mut r_page, &mut r_page_loc, storage);
+                    r_page_loc.write_page(&r_page, storage);
                 }
             }
             (Some(mut l_page), None) => {
-                if l_page.size() - 1 > MIN_KEYS_PER_PAGE {
-                    println!("single l_page");
-                    let (l_key, l_ref_page) = l_page.pop_last();
-                    l_page_loc
-                        .expect("page was loaded with this location, cannot be None")
-                        .write_page(&l_page, storage);
-
-                    let sep_size = self.size();
-                    self.separators[sep_size - 1] = l_key.clone();
-
-                    page.push_first(l_key, l_ref_page);
-                    page_loc.write_page(&page, storage);
-                } else {
-                    println!("single merge l_page");
-
-                    let sep = match &page {
-                        Page::Leaf(_) => self.separators.pop().unwrap(),
-                        Page::Internal(internal) => self.separators.pop().unwrap(),
-                    };
-
-                    let _ = self.pages.pop().unwrap();
-
-                    l_page.merge_right(sep, &mut page);
-                    l_page_loc.unwrap().write_page(&l_page, storage);
-
-                    // self.separators[index - 1] = l_page.peek_last().into();
+                if let Some(mut l_page_loc) = l_page_loc {
+                    self.underflow_single_left(&mut page, &mut l_page, &mut l_page_loc, storage);
+                    l_page_loc.write_page(&l_page, storage);
                 }
             }
             (Some(mut l_page), Some(mut r_page)) => {
-                if r_page.size() - 1 > MIN_KEYS_PER_PAGE {
-                    println!("both r_page");
-                    // borrow from right
-                    let (r_key, r_ref_page) = r_page.pop_first();
-                    r_page_loc
-                        .expect("page was loaded with this location, cannot be None")
-                        .write_page(&r_page, storage);
-
-                    self.separators[index] = r_page.peek_first().into();
-
-                    page.push_last(r_key, r_ref_page);
-                } else if l_page.size() - 1 > MIN_KEYS_PER_PAGE {
-                    println!("both l_page");
-
-                    // borrow from left
-                    let (l_key, l_ref_page) = l_page.pop_last();
-
-                    l_page_loc
-                        .expect("page was loaded with this location, cannot be None")
-                        .write_page(&l_page, storage);
-
-                    self.separators[index - 1] = l_key.clone();
-                    page.push_first(l_key, l_ref_page);
-                } else {
-                    println!("both merge r_page");
-
-                    // merge with right
-                    let sep = self.separators.remove(index);
-                    let _ = self.pages.remove(index + 1);
-
-                    page.print(storage);
-                    page.merge_right(sep, &mut r_page);
-                }
+                self.underflow_both(
+                    &mut page,
+                    index,
+                    &mut l_page,
+                    &mut l_page_loc.unwrap(),
+                    &mut r_page,
+                    &mut r_page_loc.unwrap(),
+                    storage,
+                );
+                l_page_loc.unwrap().write_page(&l_page, storage);
+                r_page_loc.unwrap().write_page(&r_page, storage);
             }
         };
 
