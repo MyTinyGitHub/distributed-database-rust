@@ -2,21 +2,19 @@ include!("btree_helper.rs");
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    // use std::io::Cursor;
-
-    // // ── Insert → Remove → Re-insert ──────────────────────────────────────────────
 
     use std::{io::Cursor, ops::Add};
 
-    use storage::btree::btree::MAX_KEYS_PER_PAGE;
+    use storage::btree::tree::MAX_KEYS_PER_PAGE;
 
     use crate::{check_is_root_sorted, create_loc, is_loc_equal, make_tree, PAGE_SIZE};
+
+    // ── Insert → Remove → Re-insert ──────────────────────────────────────────────
 
     #[test]
     fn test_reinsert_after_remove() {
         let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
-        let mut tree = make_tree(&mut storage);
+        let mut tree = make_tree(storage);
 
         let loc10 = create_loc(10);
         tree.add(&[1], loc10, storage).expect("insert failed");
@@ -25,7 +23,8 @@ mod tests {
         let loc30 = create_loc(30);
         tree.add(&[3], loc30, storage).expect("insert failed");
 
-        tree.remove(&[2], &mut storage);
+        tree.remove(&[2], storage).unwrap();
+
         assert!(
             tree.get(&[2], &mut storage).is_none(),
             "key 2 should be gone"
@@ -59,8 +58,9 @@ mod tests {
         // remove half
         for i in 0u8..10 {
             tree.root_page_location.load_page(storage).print(storage);
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage).unwrap();
         }
+
         tree.root_page_location.load_page(storage).print(storage);
 
         // re-insert with offset values
@@ -108,7 +108,7 @@ mod tests {
 
         // remove almost everything
         for i in 0u8..25 {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage).unwrap();
         }
 
         // now grow again past original size
@@ -161,7 +161,7 @@ mod tests {
 
         // remove every third key
         for i in (0u8..20).step_by(3) {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], &mut storage).unwrap();
         }
 
         // verify remaining keys have correct values
@@ -201,9 +201,9 @@ mod tests {
         let root = tree.root_page_location.load_page(&mut storage);
         assert_eq!(root.size(), 1, "root should have 1 separator");
 
-        let separator_key = root.peek_first().clone();
+        let separator_key = root.peek_first();
 
-        tree.remove(&separator_key, &mut storage);
+        tree.remove(separator_key, storage).unwrap();
 
         // all other keys should still be findable
         for i in 0u8..=MAX_KEYS_PER_PAGE as u8 {
@@ -220,7 +220,7 @@ mod tests {
 
     // ── Random order operations ───────────────────────────────────────────────────
 
-    // #[test]
+    #[test]
     fn test_shuffled_remove_order() {
         let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
         let mut tree = make_tree(storage);
@@ -233,7 +233,7 @@ mod tests {
         // remove in non-sequential order
         let remove_order: Vec<u8> = vec![15, 3, 18, 0, 7, 11, 4, 19, 1, 9];
         for &k in &remove_order {
-            tree.remove(&[k], &mut storage);
+            tree.remove(&[k], storage).unwrap();
         }
 
         // verify removed keys are gone
@@ -273,7 +273,7 @@ mod tests {
         }
 
         for i in 0u8..5 {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage).unwrap();
         }
 
         for i in 15u8..30 {
@@ -282,7 +282,7 @@ mod tests {
         }
 
         for i in 5u8..10 {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage).unwrap();
         }
 
         for i in 30u8..45 {
@@ -316,7 +316,7 @@ mod tests {
     fn test_page_alignment_after_removes() {
         use std::io::{Seek, SeekFrom};
 
-        let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
+        let storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
         let mut tree = make_tree(storage);
 
         for i in 0u8..50 {
@@ -325,7 +325,7 @@ mod tests {
         }
 
         for i in 0u8..25 {
-            tree.remove(&[i], &mut storage);
+            tree.remove(&[i], storage).unwrap();
         }
 
         let len = storage.seek(SeekFrom::End(0)).unwrap();

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::btree::{
-    btree::{MAX_KEYS_PER_PAGE, MIN_KEYS_PER_PAGE},
     location::{Location, PageStore, RefPageLocation},
     page::{OverFlowElement, Page, PushResult, RemoveResult},
+    tree::{MAX_KEYS_PER_PAGE, MIN_KEYS_PER_PAGE},
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -261,27 +261,20 @@ impl Internal {
             None
         };
 
-        let r_page = match r_page_loc {
-            None => None,
-            Some(loc) => Some(loc.load_page(storage)),
-        };
-
-        let l_page = match l_page_loc {
-            None => None,
-            Some(loc) => Some(loc.load_page(storage)),
-        };
+        let r_page = r_page_loc.map(|loc| loc.load_page(storage));
+        let l_page = l_page_loc.map(|loc| loc.load_page(storage));
 
         match (l_page, r_page) {
             (None, None) => unreachable!(),
             (None, Some(mut r_page)) => {
-                if let Some(mut r_page_loc) = r_page_loc {
-                    self.underflow_single_right(&mut page, &mut r_page, &mut r_page_loc, storage);
+                if let Some(r_page_loc) = r_page_loc {
+                    self.underflow_single_right(&mut page, &mut r_page, &r_page_loc, storage);
                     r_page_loc.write_page(&r_page, storage);
                 }
             }
             (Some(mut l_page), None) => {
-                if let Some(mut l_page_loc) = l_page_loc {
-                    self.underflow_single_left(&mut page, &mut l_page, &mut l_page_loc, storage);
+                if let Some(l_page_loc) = l_page_loc {
+                    self.underflow_single_left(&mut page, &mut l_page, &l_page_loc, storage);
                     l_page_loc.write_page(&l_page, storage);
                 }
             }
@@ -290,9 +283,9 @@ impl Internal {
                     &mut page,
                     index,
                     &mut l_page,
-                    &mut l_page_loc.unwrap(),
+                    &l_page_loc.unwrap(),
                     &mut r_page,
-                    &mut r_page_loc.unwrap(),
+                    &r_page_loc.unwrap(),
                     storage,
                 );
                 l_page_loc.unwrap().write_page(&l_page, storage);
@@ -362,6 +355,7 @@ impl Internal {
 
     pub fn split(&mut self) -> (Page, Box<[u8]>) {
         let mut r_separators = self.separators.split_off(self.separators.len() / 2);
+
         // Use the post-split separator count (+1) as the page split index so both
         // halves satisfy the pages.len() == separators.len() + 1 invariant for
         // any input size (odd or even).
@@ -370,13 +364,13 @@ impl Internal {
         // let key = r_separators.remove(0);
         let key = r_separators.remove(0);
 
-        return (
+        (
             Page::Internal(Internal {
                 separators: r_separators,
                 pages: r_pages,
             }),
             key,
-        );
+        )
     }
 
     fn index_of(&self, key: &[u8]) -> usize {

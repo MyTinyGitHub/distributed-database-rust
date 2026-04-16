@@ -33,8 +33,7 @@ impl Table {
         self.indexes
             .get_mut(index_name)
             .ok_or_else(|| StorageError::IndexNotFound(index_name.to_string()))?
-            .insert(key, engine_record)
-            .ok_or_else(|| StorageError::IndexKeyNotFound())?;
+            .insert(key, engine_record);
 
         Ok(())
     }
@@ -57,7 +56,7 @@ impl Table {
             .get(index_name)
             .ok_or_else(|| StorageError::IndexNotFound(index_name.to_string()))?
             .get(&key)
-            .ok_or_else(|| StorageError::IndexKeyNotFound())?
+            .ok_or(StorageError::IndexKeyNotFound())?
             .data;
 
         let data = &self

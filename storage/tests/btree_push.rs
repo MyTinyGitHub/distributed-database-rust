@@ -21,8 +21,8 @@ mod tests {
         let mut storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
 
         let page = Page::Leaf(Leaf {
-            keys: vec![Box::new([1 as u8])],
-            values: vec![create_loc(1 as usize)],
+            keys: vec![Box::new([1u8])],
+            values: vec![create_loc(1usize)],
         });
 
         let loc = Location::Page(RefPageLocation { start_offset: 0 });

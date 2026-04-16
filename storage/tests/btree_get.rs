@@ -4,8 +4,6 @@ include!("btree_helper.rs");
 mod tests {
     use std::io::Cursor;
 
-    use storage::btree::location::{Location, RefValueLocation};
-
     use super::*;
 
     #[test]

@@ -56,8 +56,8 @@ impl Page {
 
     pub fn peek_first_location(&self) -> Location {
         match self {
-            Page::Internal(n) => n.pages[0].clone(),
-            Page::Leaf(n) => n.values[0].clone(),
+            Page::Internal(n) => n.pages[0],
+            Page::Leaf(n) => n.values[0],
         }
     }
 

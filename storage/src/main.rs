@@ -119,7 +119,7 @@ impl StorageEngineService for StorageEngineServer {
     ) -> Result<Response<WriteResponse>, Status> {
         let request = request.get_ref();
 
-        let index = request.index_keys.get(0).unwrap();
+        let index = request.index_keys.first().unwrap();
 
         self.storage_engine
             .write()
@@ -149,8 +149,7 @@ impl StorageEngineService for StorageEngineServer {
 
         let data = data.map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        let mut result = Vec::new();
-        result.push(data);
+        let result = vec![data];
 
         Ok(Response::new(ReadByIndexResponse { data: result }))
     }

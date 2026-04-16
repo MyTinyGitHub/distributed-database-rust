@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::btree::{
-    btree::{MAX_KEYS_PER_PAGE, MIN_KEYS_PER_PAGE},
     location::Location,
     page::{OverFlowElement, Page, PushResult, RemoveResult},
+    tree::{MAX_KEYS_PER_PAGE, MIN_KEYS_PER_PAGE},
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -51,7 +51,7 @@ impl Leaf {
     pub fn get(&self, key: &[u8]) -> Option<Location> {
         for i in 0..self.keys.len() {
             if self.keys[i].as_ref() == key {
-                return Some(self.values[i].clone());
+                return Some(self.values[i]);
             }
         }
 
@@ -78,13 +78,13 @@ impl Leaf {
 
         let m_key = r_keys[0].clone();
 
-        return (
+        (
             Page::Leaf(Leaf {
                 keys: r_keys,
                 values: r_val_loc,
             }),
             m_key,
-        );
+        )
     }
 
     fn index_of(&self, key: &[u8]) -> usize {

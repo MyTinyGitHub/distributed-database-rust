@@ -1,10 +1,10 @@
 use std::{io::Cursor, path::PathBuf};
 
 use storage::btree::{
-    btree::PagingBtree,
     leaf_page::Leaf,
     location::{Location, PageStore, RefPageLocation, RefValueLocation},
     page::Page,
+    tree::PagingBtree,
 };
 
 pub const PAGE_SIZE: usize = 4096;
@@ -30,7 +30,7 @@ fn is_loc_equal(l_loc: Location, r_loc: Location) -> bool {
 fn collect_all<R: PageStore>(page: &Page, storage: &mut R, result: &mut Vec<Box<[u8]>>) {
     match page {
         Page::Leaf(leaf) => {
-            for (key, value) in leaf.keys.iter().zip(leaf.values.iter()) {
+            for (key, _) in leaf.keys.iter().zip(leaf.values.iter()) {
                 result.push(key.clone());
             }
         }
