@@ -91,11 +91,18 @@ impl Internal {
         println!("both r_page");
         // borrow from right
         let (r_key, r_ref_page) = r_page.pop_first();
-        r_page_loc.write_page(&r_page, storage);
+        r_page_loc.write_page(r_page, storage);
 
-        self.separators[index] = r_page.peek_first().into();
+        let old_parent_sep = self.separators[index].clone();
+        self.separators[index] = match r_page {
+            Page::Leaf(_) => r_page.peek_first().into(),
+            Page::Internal(_) => r_key.clone(),
+        };
 
-        page.push_last(r_key, r_ref_page);
+        match page {
+            Page::Internal(_) => page.push_last(old_parent_sep, r_ref_page),
+            Page::Leaf(_) => page.push_last(r_key, r_ref_page),
+        };
     }
 
     fn underflow_both_left<W: PageStore>(
@@ -110,10 +117,15 @@ impl Internal {
 
         let (l_key, l_ref_page) = l_page.pop_last();
 
-        l_page_loc.write_page(&l_page, storage);
+        l_page_loc.write_page(l_page, storage);
 
+        let old_parent_sep = self.separators[index - 1].clone();
         self.separators[index - 1] = l_key.clone();
-        page.push_first(l_key, l_ref_page);
+
+        match page {
+            Page::Internal(_) => page.push_first(old_parent_sep, l_ref_page),
+            Page::Leaf(_) => page.push_first(l_key, l_ref_page),
+        };
     }
 
     fn underflow_both<W: PageStore>(
@@ -126,9 +138,9 @@ impl Internal {
         r_page_loc: &Location,
         storage: &mut W,
     ) {
-        if r_page.size() - 1 > MIN_KEYS_PER_PAGE {
+        if r_page.size() > MIN_KEYS_PER_PAGE {
             self.underflow_both_right(page, index, r_page, r_page_loc, storage);
-        } else if l_page.size() - 1 > MIN_KEYS_PER_PAGE {
+        } else if l_page.size() > MIN_KEYS_PER_PAGE {
             self.underflow_both_left(page, index, l_page, l_page_loc, storage);
         } else {
             self.underflow_both_right_merge(page, index, r_page, storage);
@@ -142,15 +154,15 @@ impl Internal {
         l_page_loc: &Location,
         storage: &mut W,
     ) {
-        if l_page.size() - 1 > MIN_KEYS_PER_PAGE {
+        if l_page.size() > MIN_KEYS_PER_PAGE {
             println!("single l_page");
             let (l_key, l_ref_page) = l_page.pop_last();
-            l_page_loc.write_page(&l_page, storage);
+            l_page_loc.write_page(l_page, storage);
 
             match page {
                 Page::Leaf(leaf) => {
-                    leaf.keys.push(l_key.clone());
-                    leaf.values.push(l_ref_page);
+                    leaf.keys.insert(0, l_key.clone());
+                    leaf.values.insert(0, l_ref_page);
 
                     println!("taking leaf separator {:?}", l_key);
 
@@ -162,8 +174,10 @@ impl Internal {
 
                     let s = self.separators[sep_size - 1].clone();
 
-                    int.pages.push(l_ref_page);
-                    int.separators.push(s.clone());
+                    int.pages.insert(0, l_ref_page);
+                    int.separators.insert(0, s.clone());
+
+                    self.separators[sep_size - 1] = l_key;
                 }
             };
         } else {
@@ -171,7 +185,7 @@ impl Internal {
 
             let sep = match &page {
                 Page::Leaf(_) => self.separators.pop().unwrap(),
-                Page::Internal(internal) => self.separators.pop().unwrap(),
+                Page::Internal(_) => self.separators.pop().unwrap(),
             };
 
             let _ = self.pages.pop().unwrap();
@@ -187,12 +201,12 @@ impl Internal {
         r_page_loc: &Location,
         storage: &mut W,
     ) {
-        if r_page.size() - 1 > MIN_KEYS_PER_PAGE {
+        if r_page.size() > MIN_KEYS_PER_PAGE {
             println!("single r_page");
 
             let (r_key, r_ref_page) = r_page.pop_first();
 
-            r_page_loc.write_page(&r_page, storage);
+            r_page_loc.write_page(r_page, storage);
 
             match page {
                 Page::Leaf(leaf) => {
@@ -210,6 +224,8 @@ impl Internal {
 
                     int.pages.push(r_ref_page);
                     int.separators.push(s.clone());
+
+                    self.separators[0] = r_key;
                 }
             };
         } else {
@@ -319,9 +335,8 @@ impl Internal {
         let page_loc = self.pages[index];
         let mut page = page_loc.load_page(storage);
         let result = page.add(key, value, storage);
-        page_loc.write_page(&page, storage);
 
-        debug_assert_eq!(self.pages.len(), self.separators.len() + 1);
+        page_loc.write_page(&page, storage);
 
         match result {
             PushResult::Inserted => PushResult::Inserted,
@@ -347,7 +362,10 @@ impl Internal {
 
     pub fn split(&mut self) -> (Page, Box<[u8]>) {
         let mut r_separators = self.separators.split_off(self.separators.len() / 2);
-        let r_pages = self.pages.split_off(self.pages.len() / 2);
+        // Use the post-split separator count (+1) as the page split index so both
+        // halves satisfy the pages.len() == separators.len() + 1 invariant for
+        // any input size (odd or even).
+        let r_pages = self.pages.split_off(self.separators.len() + 1);
 
         // let key = r_separators.remove(0);
         let key = r_separators.remove(0);

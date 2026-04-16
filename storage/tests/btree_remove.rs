@@ -293,7 +293,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn test_remove_after_splits() {
         let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
         let mut tree = make_tree(&mut storage);
@@ -885,6 +885,277 @@ mod tests {
                 i
             );
         }
+
+        check_is_root_sorted(&mut tree, &mut storage);
+    }
+
+    // // ── Empty tree ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_empty_tree_get_returns_none() {
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        assert!(tree.get(&[42], &mut storage).is_none());
+    }
+
+    #[test]
+    fn test_empty_tree_remove_does_not_panic() {
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        tree.remove(&[42], &mut storage).unwrap();
+    }
+
+    // // ── Value correctness ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_value_correctness_after_removes() {
+        // Most stress tests only check key presence. This test verifies that the
+        // Location stored for each key is actually the one that was inserted.
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        for i in 0u8..60 {
+            tree.add(&[i], create_loc(i as usize), &mut storage)
+                .expect("insert failed");
+        }
+
+        // Remove every third key.
+        for i in (0u8..60).step_by(3) {
+            tree.remove(&[i], &mut storage);
+        }
+
+        for i in 0u8..60 {
+            let result = tree.get(&[i], &mut storage);
+            if i % 3 == 0 {
+                assert!(result.is_none(), "key {} should be removed", i);
+            } else {
+                let loc = result.unwrap_or_else(|| panic!("key {} should exist", i));
+                assert!(
+                    is_loc_equal(loc, create_loc(i as usize)),
+                    "key {} returned wrong location",
+                    i
+                );
+            }
+        }
+
+        check_is_root_sorted(&mut tree, &mut storage);
+    }
+
+    // // ── Re-insert after remove ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_reinsert_after_remove() {
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        for i in 0u8..30 {
+            tree.add(&[i], create_loc(i as usize), &mut storage)
+                .expect("insert failed");
+        }
+
+        // Remove a spread of keys, then re-add them with different location values.
+        let targets = [5u8, 10, 15, 20, 25];
+        for &i in &targets {
+            tree.remove(&[i], &mut storage);
+            assert!(tree.get(&[i], &mut storage).is_none(), "key {} should be absent after remove", i);
+        }
+
+        for &i in &targets {
+            tree.add(&[i], create_loc(i as usize + 100), &mut storage)
+                .expect("re-insert failed");
+        }
+
+        for &i in &targets {
+            let loc = tree
+                .get(&[i], &mut storage)
+                .unwrap_or_else(|| panic!("re-inserted key {} should exist", i));
+            assert!(
+                is_loc_equal(loc, create_loc(i as usize + 100)),
+                "key {} should return the new location after re-insert",
+                i
+            );
+        }
+
+        // Keys that were never removed still carry their original values.
+        for i in 0u8..30 {
+            if !targets.contains(&i) {
+                let loc = tree
+                    .get(&[i], &mut storage)
+                    .unwrap_or_else(|| panic!("untouched key {} should exist", i));
+                assert!(
+                    is_loc_equal(loc, create_loc(i as usize)),
+                    "untouched key {} should still have its original location",
+                    i
+                );
+            }
+        }
+
+        check_is_root_sorted(&mut tree, &mut storage);
+    }
+
+    // // ── Separator key removal ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_remove_separator_key() {
+        // With MAX_KEYS_PER_PAGE=9 and a leaf split at index MAX/2=4, inserting keys
+        // 0..15 produces an internal root with separators [4, 8]:
+        //   leaf [0,1,2,3]  |4|  leaf [4,5,6,7]  |8|  leaf [8,9,10,11,12,13,14]
+        // Removing keys 4 and 8 — which are stored both in their leaf and as internal
+        // separators — verifies that stale separators do not corrupt routing.
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        for i in 0u8..15 {
+            tree.add(&[i], create_loc(i as usize), &mut storage)
+                .expect("insert failed");
+        }
+
+        tree.remove(&[4], &mut storage);
+        tree.remove(&[8], &mut storage);
+
+        assert!(tree.get(&[4], &mut storage).is_none(), "separator key 4 should be removed");
+        assert!(tree.get(&[8], &mut storage).is_none(), "separator key 8 should be removed");
+
+        for i in 0u8..15 {
+            if i == 4 || i == 8 {
+                continue;
+            }
+            let loc = tree
+                .get(&[i], &mut storage)
+                .unwrap_or_else(|| panic!("key {} should still be findable after separator removal", i));
+            assert!(
+                is_loc_equal(loc, create_loc(i as usize)),
+                "key {} returned wrong location",
+                i
+            );
+        }
+
+        check_is_root_sorted(&mut tree, &mut storage);
+    }
+
+    // // ── Root height collapse ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_root_height_collapse() {
+        // Build a 3-level tree then remove enough keys to merge internal nodes all
+        // the way up so the root collapses to a shallower height.
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        for i in 0u8..100 {
+            tree.add(&[i], create_loc(i as usize), &mut storage)
+                .expect("insert failed");
+        }
+
+        for i in 10u8..100 {
+            tree.remove(&[i], &mut storage);
+        }
+
+        for i in 0u8..10 {
+            let loc = tree
+                .get(&[i], &mut storage)
+                .unwrap_or_else(|| panic!("key {} should exist after collapse", i));
+            assert!(
+                is_loc_equal(loc, create_loc(i as usize)),
+                "key {} has wrong location after root collapse",
+                i
+            );
+        }
+
+        check_is_root_sorted(&mut tree, &mut storage);
+    }
+
+    // // ── Random removal order ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_remove_random_order() {
+        // Deterministic XorShift shuffle exercises borrow/merge paths that purely
+        // sequential removal orders miss.
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        let count: u8 = 100;
+        for i in 0..count {
+            tree.add(&[i], create_loc(i as usize), &mut storage)
+                .expect("insert failed");
+        }
+
+        let mut keys: Vec<u8> = (0..count).collect();
+        let mut state: u32 = 0xdeadbeef;
+        for i in (1..keys.len()).rev() {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let j = (state as usize) % (i + 1);
+            keys.swap(i, j);
+        }
+
+        for &key in &keys {
+            tree.remove(&[key], &mut storage);
+        }
+
+        for i in 0..count {
+            assert!(
+                tree.get(&[i], &mut storage).is_none(),
+                "key {} should be removed",
+                i
+            );
+        }
+    }
+
+    // // ── Multi-byte keys ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_multi_byte_keys() {
+        // All previous tests use 1-byte keys. This test uses 2-byte keys to verify
+        // that lexicographic ordering is handled correctly end-to-end.
+        // Lex order: [0,255] < [1,0] — first byte dominates, so this matches
+        // big-endian u16 ordering and is a natural extension of single-byte tests.
+        let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
+        let mut tree = make_tree(&mut storage);
+
+        // 30 two-byte keys: high byte from 0..3, low byte from 0..10.
+        for high in 0u8..3 {
+            for low in 0u8..10 {
+                let key = [high, low];
+                let idx = (high as usize) * 10 + (low as usize);
+                tree.add(key.as_slice(), create_loc(idx), &mut storage)
+                    .expect("insert failed");
+            }
+        }
+
+        // All keys should be retrievable with correct locations.
+        for high in 0u8..3 {
+            for low in 0u8..10 {
+                let key = [high, low];
+                let idx = (high as usize) * 10 + (low as usize);
+                let loc = tree
+                    .get(key.as_slice(), &mut storage)
+                    .unwrap_or_else(|| panic!("key {:?} should exist", key));
+                assert!(
+                    is_loc_equal(loc, create_loc(idx)),
+                    "key {:?} returned wrong location",
+                    key
+                );
+            }
+        }
+
+        // Remove one key per high-byte group and verify ordering is not disturbed.
+        tree.remove(&[0, 5], &mut storage);
+        tree.remove(&[1, 0], &mut storage);
+        tree.remove(&[2, 9], &mut storage);
+
+        assert!(tree.get(&[0, 5], &mut storage).is_none());
+        assert!(tree.get(&[1, 0], &mut storage).is_none());
+        assert!(tree.get(&[2, 9], &mut storage).is_none());
+
+        // Neighbours of the removed keys should be unaffected.
+        assert!(tree.get(&[0, 4], &mut storage).is_some());
+        assert!(tree.get(&[0, 6], &mut storage).is_some());
+        assert!(tree.get(&[1, 1], &mut storage).is_some());
+        assert!(tree.get(&[2, 8], &mut storage).is_some());
 
         check_is_root_sorted(&mut tree, &mut storage);
     }
