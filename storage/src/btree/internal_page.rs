@@ -91,13 +91,39 @@ impl Internal {
                         .expect("page was loaded with this location, cannot be None")
                         .write_page(&r_page, storage);
 
-                    self.separators[0] = r_page.peek_first().into();
+                    match &mut page {
+                        Page::Leaf(leaf) => {
+                            let s = r_page.peek_first().into();
 
-                    page.push_last(r_key, r_ref_page);
+                            leaf.keys.push(r_key);
+                            leaf.values.push(r_ref_page);
+
+                            println!("taking leaf separator {:?}", s);
+
+                            self.separators[0] = s;
+                        }
+                        Page::Internal(int) => {
+                            let s = self.separators[0].clone();
+
+                            int.pages.push(r_ref_page);
+                            int.separators.push(s.clone());
+
+                            self.separators[0] = s;
+                        }
+                    };
                 } else {
                     println!("single merge r_page");
 
-                    let sep = self.separators.remove(0);
+                    let sep = match r_page {
+                        Page::Leaf(_) => r_page.peek_first().into(),
+                        Page::Internal(_) => r_page
+                            .peek_first_location()
+                            .load_page(storage)
+                            .peek_first()
+                            .into(),
+                    };
+
+                    let _ = self.separators.remove(0);
                     let _ = self.pages.remove(1);
 
                     page.print(storage);

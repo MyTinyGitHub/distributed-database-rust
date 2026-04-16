@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use crate::{
     btree::{
         internal_page::Internal,
-        leaf_page::Leaf,
         location::{Location, PageStore, RefPageLocation},
         page::{Page, PushResult, RemoveResult},
     },

@@ -54,11 +54,14 @@ mod tests {
             let loc = create_loc(i as usize);
             tree.add(&[i], loc, storage).expect("insert failed");
         }
+        tree.root_page_location.load_page(storage).print(storage);
 
         // remove half
         for i in 0u8..10 {
+            tree.root_page_location.load_page(storage).print(storage);
             tree.remove(&[i], &mut storage);
         }
+        tree.root_page_location.load_page(storage).print(storage);
 
         // re-insert with offset values
         for i in 0u8..10 {
@@ -66,6 +69,7 @@ mod tests {
             tree.add(&[i], loc, storage).expect("reinsert failed");
         }
 
+        tree.root_page_location.load_page(storage).print(storage);
         // verify all 20 keys are present with correct values
         for i in 0u8..10 {
             let loc = create_loc(i.add(50) as usize);
@@ -77,6 +81,9 @@ mod tests {
                 i + 50
             );
         }
+
+        tree.root_page_location.load_page(storage).print(storage);
+
         for i in 10u8..20 {
             let loc = create_loc(i as usize);
             assert!(
