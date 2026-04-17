@@ -5,3 +5,4 @@ pub mod manifest;
 pub mod record;
 pub mod storage_error;
 pub mod table;
+pub mod wal_client;

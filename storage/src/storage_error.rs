@@ -19,4 +19,10 @@ pub enum StorageError {
 
     #[error("Table already exists: {0}")]
     TableAlreadyExists(String),
+
+    #[error("Wal service is not available")]
+    WalServiceNotAvailable(),
+
+    #[error("Unable to write payload to wal service")]
+    WalWriteFailed(),
 }

@@ -9,7 +9,10 @@ use std::{
 };
 
 use log::info;
-use storage::{config::Config, manifest::Manifest, storage_error::StorageError, table::Table};
+use storage::{
+    config::Config, manifest::Manifest, storage_error::StorageError, table::Table,
+    wal_client::write,
+};
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_reflection::server::Builder;
 
@@ -132,6 +135,10 @@ impl StorageEngineService for StorageEngineServer {
         let request = request.get_ref();
 
         let index = request.index_keys.first().unwrap();
+
+        write(index.key.clone(), request.row_data.clone())
+            .await
+            .unwrap();
 
         self.storage_engine
             .write()
