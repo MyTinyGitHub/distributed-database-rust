@@ -5,11 +5,12 @@ use crate::record::EngineRecord;
 use crate::storage_error::StorageError;
 use crate::{config::DirectoriesConfig, record::EngineHeader};
 use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
 
 pub struct Table {
     table_name: String,
     file: HeapFile,
-    indexes: HashMap<String, PagingBtree>,
+    indexes: HashMap<String, PagingBtree<File>>,
 }
 
 impl Table {
@@ -52,10 +53,10 @@ impl Table {
         Ok(())
     }
 
-    pub fn get(&self, index_name: &str, key: Vec<u8>) -> Result<Vec<u8>, StorageError> {
+    pub fn get(&mut self, index_name: &str, key: Vec<u8>) -> Result<Vec<u8>, StorageError> {
         let location = &self
             .indexes
-            .get(index_name)
+            .get_mut(index_name)
             .ok_or_else(|| StorageError::IndexNotFound(index_name.to_string()))?
             .get(&key)
             .ok_or(StorageError::IndexKeyNotFound())?;
@@ -75,7 +76,7 @@ impl Table {
         }
 
         self.indexes
-            .insert(index_name.to_string(), PagingBtree::new(index_name));
+            .insert(index_name.to_string(), PagingBtree::open(index_name));
 
         Ok(())
     }

@@ -1,9 +1,9 @@
-use std::{io::Cursor, path::PathBuf};
+use std::{fs::File, io::Cursor, path::PathBuf};
 
 use storage::{
     btree::{
         leaf_page::Leaf,
-        location::{Location, PageStore, RefPageLocation, RefValueLocation},
+        location::{Location, PageStore, RefPageLocation},
         page::Page,
         tree::PagingBtree,
     },
@@ -49,7 +49,8 @@ fn collect_all<R: PageStore>(page: &Page, storage: &mut R, result: &mut Vec<Box<
     }
 }
 
-pub fn check_is_root_sorted<W: PageStore>(tree: &mut PagingBtree, storage: &mut W) {
+pub fn check_is_root_sorted(tree: &mut PagingBtree<Cursor<Vec<u8>>>) {
+    let storage = &mut tree.storage;
     let root_page = tree.root_page_location.load_page(storage);
 
     let mut collected = Vec::new();
@@ -60,7 +61,17 @@ pub fn check_is_root_sorted<W: PageStore>(tree: &mut PagingBtree, storage: &mut 
     assert_eq!(collected, sorted);
 }
 
-pub fn make_tree(storage: &mut Cursor<Vec<u8>>) -> PagingBtree {
+pub fn make_tree_from_stroage(storage: Cursor<Vec<u8>>) -> PagingBtree<Cursor<Vec<u8>>> {
+    let location = RefPageLocation { start_offset: 0 };
+
+    PagingBtree {
+        storage,
+        root_page_location: location,
+    }
+}
+
+pub fn make_tree() -> PagingBtree<Cursor<Vec<u8>>> {
+    let mut storage = Cursor::new(vec![0u8; PAGE_SIZE]);
     let location = RefPageLocation { start_offset: 0 };
 
     let root = Page::Leaf(Leaf {
@@ -68,10 +79,10 @@ pub fn make_tree(storage: &mut Cursor<Vec<u8>>) -> PagingBtree {
         values: Vec::new(),
     });
 
-    location.write_page(&root, storage);
+    location.write_page(&root, &mut storage);
 
     PagingBtree {
-        file_path: PathBuf::new(),
+        storage,
         root_page_location: location,
     }
 }

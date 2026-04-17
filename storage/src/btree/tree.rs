@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+use std::{
+    fs::{File, OpenOptions},
+    io::BufWriter,
+    path::PathBuf,
+};
 
 use crate::{
     btree::{
@@ -13,42 +17,43 @@ pub const MAX_KEYS_PER_PAGE: usize = 9;
 pub const MIN_KEYS_PER_PAGE: usize = MAX_KEYS_PER_PAGE / 2;
 
 #[derive(Debug)]
-pub struct PagingBtree {
-    pub file_path: PathBuf,
+pub struct PagingBtree<W: PageStore> {
+    pub storage: W,
     pub root_page_location: RefPageLocation,
 }
 
-impl PagingBtree {
-    pub fn new(index_name: &str) -> Self {
+impl PagingBtree<File> {
+    pub fn open(index_name: &str) -> Self {
         let file_path = PathBuf::new();
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(file_path)
+            .unwrap();
+
         Self {
-            file_path,
+            storage: file,
+            root_page_location: RefPageLocation { start_offset: 0 },
+        }
+    }
+}
+
+impl<W: PageStore> PagingBtree<W> {
+    pub fn with_storage(storage: W) -> Self {
+        Self {
+            storage,
             root_page_location: RefPageLocation { start_offset: 0 },
         }
     }
 
-    pub fn get(&self, key: &[u8]) -> Option<Location> {
-        None
+    pub fn get(&mut self, key: &[u8]) -> Option<Location> {
+        let page = self.root_page_location.load_page(&mut self.storage);
+        page.get(key, &mut self.storage)
     }
 
-    pub fn remove(&self, key: &[u8]) -> Result<(), StorageError> {
-        Ok(())
-    }
-
-    pub fn insert(&self, key: &[u8], value: Location) -> Result<(), StorageError> {
-        Ok(())
-    }
-
-    pub fn get_from_storage<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<Location> {
-        let page = self.root_page_location.load_page(storage);
-        page.get(key, storage)
-    }
-
-    pub fn remove_from_storage<W: PageStore>(
-        &self,
-        key: &[u8],
-        storage: &mut W,
-    ) -> Result<(), StorageError> {
+    pub fn remove(&mut self, key: &[u8]) -> Result<(), StorageError> {
+        let storage = &mut self.storage;
         let mut root_page = self.root_page_location.load_page(storage);
 
         let result = root_page.remove(key, storage);
@@ -84,13 +89,8 @@ impl PagingBtree {
         Ok(())
     }
 
-    pub fn add_to_storage<W: PageStore>(
-        &mut self,
-        key: &[u8],
-        value: Location,
-        storage: &mut W,
-    ) -> Result<(), StorageError> {
-        println!("Adding");
+    pub fn insert(&mut self, key: &[u8], value: Location) -> Result<(), StorageError> {
+        let storage = &mut self.storage;
         let mut root_page = self.root_page_location.load_page(storage);
 
         let result = root_page.add(key, value, storage);

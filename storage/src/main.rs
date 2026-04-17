@@ -33,13 +33,13 @@ impl StorageEngine {
     }
 
     pub fn read_data(
-        &self,
+        &mut self,
         table_name: &str,
         index_name: &str,
         index_key: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
         self.tables
-            .get(table_name)
+            .get_mut(table_name)
             .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?
             .get(index_name, index_key)
     }
