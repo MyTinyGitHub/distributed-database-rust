@@ -1,12 +1,14 @@
 use std::{
     fs::{File, OpenOptions},
-    io::BufWriter,
     path::PathBuf,
 };
+
+use log::info;
 
 use crate::{
     btree::{
         internal_page::Internal,
+        leaf_page::Leaf,
         location::{Location, PageStore, RefPageLocation},
         page::{Page, PushResult, RemoveResult},
     },
@@ -23,18 +25,32 @@ pub struct PagingBtree<W: PageStore> {
 }
 
 impl PagingBtree<File> {
-    pub fn open(index_name: &str) -> Self {
-        let file_path = PathBuf::new();
-        let file = OpenOptions::new()
+    pub fn open(file_path: &PathBuf) -> Self {
+        let root_location = RefPageLocation { start_offset: 0 };
+
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+
+        let create_new = !std::fs::exists(file_path).unwrap();
+
+        let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(file_path)
             .unwrap();
 
+        if create_new {
+            let root_page = Page::Leaf(Leaf {
+                keys: Vec::new(),
+                values: Vec::new(),
+            });
+
+            root_location.write_page(&root_page, &mut file);
+        }
+
         Self {
             storage: file,
-            root_page_location: RefPageLocation { start_offset: 0 },
+            root_page_location: root_location,
         }
     }
 }
@@ -49,6 +65,7 @@ impl<W: PageStore> PagingBtree<W> {
 
     pub fn get(&mut self, key: &[u8]) -> Option<Location> {
         let page = self.root_page_location.load_page(&mut self.storage);
+        info!(" searching for key {:?} in {:?}", key, page);
         page.get(key, &mut self.storage)
     }
 
@@ -97,6 +114,7 @@ impl<W: PageStore> PagingBtree<W> {
 
         match result {
             PushResult::Overflow(overflow) => {
+                info!("inserted {:?} with overflow", key);
                 let right_page_loc = Location::Page(RefPageLocation::alloc(storage)?);
                 right_page_loc.write_page(&overflow.page, storage);
 
@@ -113,6 +131,7 @@ impl<W: PageStore> PagingBtree<W> {
                 Ok(())
             }
             PushResult::Inserted => {
+                info!("inserted {:?}", key);
                 self.root_page_location.write_page(&root_page, storage);
                 Ok(())
             }

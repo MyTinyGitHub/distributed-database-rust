@@ -1,2 +1,3 @@
 [directories]
-heap_files="./data/heap_files"
+heap_files = "./data/heaps"
+index_files = "./data/indexes"

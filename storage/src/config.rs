@@ -10,6 +10,7 @@ pub struct Config {
 #[derive(Debug, Deserialize, Clone)]
 pub struct DirectoriesConfig {
     pub heap_files: String,
+    pub index_files: String,
 }
 
 impl Config {

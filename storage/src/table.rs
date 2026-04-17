@@ -1,23 +1,30 @@
+use log::info;
+
 use crate::btree::location::Location;
 use crate::btree::tree::PagingBtree;
 use crate::heap_file::HeapFile;
 use crate::record::EngineRecord;
 use crate::storage_error::StorageError;
 use crate::{config::DirectoriesConfig, record::EngineHeader};
-use std::collections::{BTreeMap, HashMap};
-use std::fs::File;
 
+use std::collections::HashMap;
+use std::fs::File;
+use std::path::PathBuf;
+
+#[derive(Debug)]
 pub struct Table {
-    table_name: String,
     file: HeapFile,
+    index_location: PathBuf,
     indexes: HashMap<String, PagingBtree<File>>,
 }
 
 impl Table {
     pub fn new(table_name: &str, config: &DirectoriesConfig) -> Result<Self, StorageError> {
+        info!("creating table {}", table_name);
+
         Ok(Self {
-            table_name: table_name.to_string(),
             file: HeapFile::new(&config.heap_files, table_name)?,
+            index_location: PathBuf::from(&config.index_files).join(table_name),
             indexes: HashMap::new(),
         })
     }
@@ -27,7 +34,13 @@ impl Table {
         index_name: &str,
         (key, value): (&[u8], Vec<u8>),
     ) -> Result<(), StorageError> {
+        info!(
+            "inserting (key: {:?}, value: {:?}) to index {}",
+            key, value, index_name
+        );
+
         let (start_offset, size) = self.file.insert(value);
+
         let engine_record = EngineRecord {
             version: 1,
             data: EngineHeader { start_offset, size },
@@ -54,6 +67,8 @@ impl Table {
     }
 
     pub fn get(&mut self, index_name: &str, key: Vec<u8>) -> Result<Vec<u8>, StorageError> {
+        info!("getting index {} key {:?}", index_name, key);
+
         let location = &self
             .indexes
             .get_mut(index_name)
@@ -75,8 +90,18 @@ impl Table {
             return Err(StorageError::IndexAlreadyExists(index_name.to_string()));
         }
 
+        let index_path = self
+            .index_location
+            .clone()
+            .join(index_name)
+            .with_extension("idx");
+
+        info!("creating index {}", index_name);
+
         self.indexes
-            .insert(index_name.to_string(), PagingBtree::open(index_name));
+            .insert(index_name.to_string(), PagingBtree::open(&index_path));
+
+        info!("created index {}", index_name);
 
         Ok(())
     }

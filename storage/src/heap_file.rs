@@ -9,6 +9,7 @@ use std::os::unix::fs::FileExt;
 
 use crate::storage_error::StorageError;
 
+#[derive(Debug)]
 pub struct HeapFile {
     path: PathBuf,
     file: RwLock<File>,

@@ -31,7 +31,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let table_name = "t".to_owned();
     let index_name = "i".to_owned();
     let index_key = "k".as_bytes();
+    let index_key_2 = "k2".as_bytes();
     let data = bincode::serialize("v").unwrap();
+    let data_d = bincode::serialize("d").unwrap();
 
     let engine_request = CreateTableRequest {
         table: table_name.clone(),
@@ -54,13 +56,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
         key: index_key.to_vec(),
     };
 
-    let mut index_keys = Vec::new();
-    index_keys.push(index_key_struct);
+    let index_keys = vec![index_key_struct];
 
     let insert_data = WriteRequest {
         table: table_name.clone(),
         row_data: data,
-        index_keys: index_keys,
+        index_keys: index_keys.clone(),
+    };
+
+    let _ = client.write(Request::new(insert_data)).await?;
+
+    let index_key_struct = IndexKey {
+        index_name: index_name.clone(),
+        key: index_key_2.to_vec(),
+    };
+    let index_keys_d = vec![index_key_struct];
+    let insert_data = WriteRequest {
+        table: table_name.clone(),
+        row_data: data_d,
+        index_keys: index_keys_d,
     };
 
     let _ = client.write(Request::new(insert_data)).await?;

@@ -57,6 +57,7 @@ impl RefPageLocation {
             .expect("seek failed");
 
         file.read_exact(&mut buffer).expect("failed to read page");
+
         bincode::deserialize(&buffer).unwrap()
     }
 

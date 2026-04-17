@@ -1,3 +1,4 @@
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::btree::{
@@ -6,7 +7,7 @@ use crate::btree::{
     tree::{MAX_KEYS_PER_PAGE, MIN_KEYS_PER_PAGE},
 };
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Leaf {
     pub keys: Vec<Box<[u8]>>,
     pub values: Vec<Location>,
@@ -59,6 +60,8 @@ impl Leaf {
     }
 
     pub fn add(&mut self, key: &[u8], value: Location) -> PushResult {
+        info!("adding key {:?} to {:?}", key, self.values);
+
         let index = self.index_of(key);
 
         self.keys.insert(index, key.into());
@@ -68,6 +71,8 @@ impl Leaf {
             let (page, key) = self.split();
             return PushResult::Overflow(OverFlowElement { key, page });
         }
+
+        info!("added key {:?} to {:?}", key, self.keys);
 
         PushResult::Inserted
     }

@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use log::info;
 use storage::{config::Config, storage_error::StorageError, table::Table};
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_reflection::server::Builder;
@@ -21,7 +22,7 @@ use crate::proto_storage::{
 
 struct StorageEngine {
     config: Arc<Config>,
-    tables: HashMap<String, Table>,
+    pub tables: HashMap<String, Table>,
 }
 
 impl StorageEngine {
@@ -141,6 +142,16 @@ impl StorageEngineService for StorageEngineServer {
     ) -> Result<Response<ReadByIndexResponse>, Status> {
         let request = request.get_ref();
 
+        info!(
+            "getting index {} in table {}",
+            &request.index_name, &request.table
+        );
+
+        info!(
+            "current content of indexes: {:?}",
+            self.storage_engine.read().unwrap().tables
+        );
+
         let data = self.storage_engine.write().unwrap().read_data(
             &request.table,
             &request.index_name,
@@ -153,6 +164,7 @@ impl StorageEngineService for StorageEngineServer {
 
         Ok(Response::new(ReadByIndexResponse { data: result }))
     }
+
     async fn create_table(
         &self,
         request: Request<CreateTableRequest>,

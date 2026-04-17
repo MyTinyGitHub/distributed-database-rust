@@ -6,7 +6,7 @@ use crate::btree::{
     tree::{MAX_KEYS_PER_PAGE, MIN_KEYS_PER_PAGE},
 };
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Internal {
     pub separators: Vec<Box<[u8]>>,
     pub pages: Vec<Location>,

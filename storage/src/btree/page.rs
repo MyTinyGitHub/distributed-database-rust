@@ -6,7 +6,7 @@ use crate::btree::{
     location::{Location, PageStore},
 };
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Page {
     Internal(Internal),
     Leaf(Leaf),
@@ -57,7 +57,7 @@ impl Page {
     pub fn peek_first_location(&self) -> Location {
         match self {
             Page::Internal(n) => n.pages[0],
-            Page::Leaf(n) => n.values[0].clone(),
+            Page::Leaf(n) => n.values[0],
         }
     }
 
