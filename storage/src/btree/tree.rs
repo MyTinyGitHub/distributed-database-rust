@@ -19,44 +19,51 @@ pub struct PagingBtree {
 }
 
 impl PagingBtree {
-    pub fn new(file_path: PathBuf) -> Self {
+    pub fn new(index_name: &str) -> Self {
+        let file_path = PathBuf::new();
         Self {
-            file_path: file_path.clone(),
+            file_path,
             root_page_location: RefPageLocation { start_offset: 0 },
         }
     }
 
-    pub fn get<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<Location> {
+    pub fn get(&self, key: &[u8]) -> Option<Location> {
+        None
+    }
+
+    pub fn remove(&self, key: &[u8]) -> Result<(), StorageError> {
+        Ok(())
+    }
+
+    pub fn insert(&self, key: &[u8], value: Location) -> Result<(), StorageError> {
+        Ok(())
+    }
+
+    pub fn get_from_storage<R: PageStore>(&self, key: &[u8], storage: &mut R) -> Option<Location> {
         let page = self.root_page_location.load_page(storage);
         page.get(key, storage)
     }
 
-    pub fn remove<W: PageStore>(&self, key: &[u8], storage: &mut W) -> Result<(), StorageError> {
+    pub fn remove_from_storage<W: PageStore>(
+        &self,
+        key: &[u8],
+        storage: &mut W,
+    ) -> Result<(), StorageError> {
         let mut root_page = self.root_page_location.load_page(storage);
 
         let result = root_page.remove(key, storage);
 
         match result {
             RemoveResult::NotFound => println!("root notfound"),
-            RemoveResult::Underflow => {
-                match &root_page {
-                    Page::Leaf(_) => println!("underflow in leaf"),
-                    Page::Internal(internal) => {
-                        if internal.pages.len() == 1 {
-                            println!("replacing root");
-                            root_page = internal.pages.first().unwrap().load_page(storage);
-                        }
+            RemoveResult::Underflow => match &root_page {
+                Page::Leaf(_) => println!("underflow in leaf"),
+                Page::Internal(internal) => {
+                    if internal.pages.len() == 1 {
+                        println!("replacing root");
+                        root_page = internal.pages.first().unwrap().load_page(storage);
                     }
                 }
-
-                // if let Page::Leaf(_) = root_page {
-                //     return Ok(());
-                // }
-
-                // if let Page::Internal(page) = &mut root_page {
-                //     page.handle_underflow(key, storage);
-                // };
-            }
+            },
             RemoveResult::Removed => {
                 println!("root removed");
 
@@ -71,14 +78,13 @@ impl PagingBtree {
                 }
             }
         }
-        //HANDLE UNDERFLOW IN PARENT
 
         self.root_page_location.write_page(&root_page, storage);
 
         Ok(())
     }
 
-    pub fn add<W: PageStore>(
+    pub fn add_to_storage<W: PageStore>(
         &mut self,
         key: &[u8],
         value: Location,

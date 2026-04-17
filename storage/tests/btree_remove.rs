@@ -16,24 +16,27 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc10 = create_loc(10);
-        tree.add(&[1], loc10, storage).expect("insert failed");
+        tree.add_to_storage(&[1], loc10, storage)
+            .expect("insert failed");
         let loc20 = create_loc(20);
-        tree.add(&[2], loc20, storage).expect("insert failed");
+        tree.add_to_storage(&[2], loc20, storage)
+            .expect("insert failed");
         let loc30 = create_loc(30);
-        tree.add(&[3], loc30, storage).expect("insert failed");
+        tree.add_to_storage(&[3], loc30, storage)
+            .expect("insert failed");
 
         // Remove the middle key
-        tree.remove(&[2], storage).unwrap();
+        tree.remove_from_storage(&[2], storage).unwrap();
 
         // Key should no longer be findable
         assert!(
-            tree.get(&[2], storage).is_none(),
+            tree.get_from_storage(&[2], storage).is_none(),
             "removed key should not be found"
         );
 
         // Other keys should still be present
-        let r_loc1 = tree.get(&[1], storage).unwrap();
-        let r_loc3 = tree.get(&[3], storage).unwrap();
+        let r_loc1 = tree.get_from_storage(&[1], storage).unwrap();
+        let r_loc3 = tree.get_from_storage(&[3], storage).unwrap();
 
         assert!(is_loc_equal(loc10, r_loc1));
         assert!(is_loc_equal(loc30, r_loc3));
@@ -45,13 +48,14 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc10 = create_loc(10);
-        tree.add(&[1], loc10, storage).expect("insert failed");
+        tree.add_to_storage(&[1], loc10, storage)
+            .expect("insert failed");
 
         // Try to remove a key that doesn't exist
-        tree.remove(&[99], storage).unwrap();
+        tree.remove_from_storage(&[99], storage).unwrap();
 
         // Original key should still be there
-        let r_loc1 = tree.get(&[1], storage).unwrap();
+        let r_loc1 = tree.get_from_storage(&[1], storage).unwrap();
         assert!(is_loc_equal(loc10, r_loc1));
     }
 
@@ -61,11 +65,15 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc50 = create_loc(50);
-        tree.add(&[5], loc50, storage).expect("insert failed");
+        tree.add_to_storage(&[5], loc50, storage)
+            .expect("insert failed");
 
-        tree.remove(&[5], storage).unwrap();
+        tree.remove_from_storage(&[5], storage).unwrap();
 
-        assert!(tree.get(&[5], storage).is_none(), "key should be removed");
+        assert!(
+            tree.get_from_storage(&[5], storage).is_none(),
+            "key should be removed"
+        );
     }
 
     // // ── Remove with tree restructuring ───────────────────────────────────────────
@@ -79,19 +87,20 @@ mod tests {
         // to trigger underflow (below MAX_KEYS_PER_PAGE/2 = 4)
         for i in 0u8..6 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         // Remove enough keys to cause underflow
         // After: [0, 1, 4, 5] - 4 keys is min threshold
-        tree.remove(&[1], storage).unwrap();
-        tree.remove(&[2], storage).unwrap();
-        tree.remove(&[3], storage).unwrap();
+        tree.remove_from_storage(&[1], storage).unwrap();
+        tree.remove_from_storage(&[2], storage).unwrap();
+        tree.remove_from_storage(&[3], storage).unwrap();
 
         // Remaining keys should still be findable
-        assert!(tree.get(&[0], storage).is_some());
-        assert!(tree.get(&[4], storage).is_some());
-        assert!(tree.get(&[5], storage).is_some());
+        assert!(tree.get_from_storage(&[0], storage).is_some());
+        assert!(tree.get_from_storage(&[4], storage).is_some());
+        assert!(tree.get_from_storage(&[5], storage).is_some());
     }
 
     #[test]
@@ -101,18 +110,19 @@ mod tests {
 
         for i in 0u8..5 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         // Remove all keys
         for i in 0u8..5 {
-            tree.remove(&[i], storage).unwrap();
+            tree.remove_from_storage(&[i], storage).unwrap();
         }
 
         // Tree should be empty
         for i in 0u8..5 {
             assert!(
-                tree.get(&[i], storage).is_none(),
+                tree.get_from_storage(&[i], storage).is_none(),
                 "key {} should be removed",
                 i
             );
@@ -126,18 +136,19 @@ mod tests {
 
         for i in 0u8..100 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         // Remove all keys
         for i in 0u8..100 {
-            tree.remove(&[100 - i - 1], storage).unwrap();
+            tree.remove_from_storage(&[100 - i - 1], storage).unwrap();
         }
 
         // Tree should be empty
         for i in 0u8..5 {
             assert!(
-                tree.get(&[i], &mut storage).is_none(),
+                tree.get_from_storage(&[i], &mut storage).is_none(),
                 "key {} should be removed",
                 i
             );
@@ -150,13 +161,14 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc99 = create_loc(99);
-        tree.add(&[42], loc99, storage).expect("insert failed");
+        tree.add_to_storage(&[42], loc99, storage)
+            .expect("insert failed");
 
-        assert!(tree.get(&[42], storage).is_some());
+        assert!(tree.get_from_storage(&[42], storage).is_some());
 
-        tree.remove(&[42], storage).unwrap();
+        tree.remove_from_storage(&[42], storage).unwrap();
 
-        assert!(tree.get(&[42], storage).is_none());
+        assert!(tree.get_from_storage(&[42], storage).is_none());
     }
 
     // // ── Multiple removes ──────────────────────────────────────────────────────────
@@ -169,14 +181,15 @@ mod tests {
         // Insert many keys
         for i in 0u8..20 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         tree.root_page_location.load_page(storage).print(storage);
 
         // Remove even numbers
         for i in (0u8..20).step_by(2) {
-            tree.remove(&[i], storage).unwrap();
+            tree.remove_from_storage(&[i], storage).unwrap();
         }
 
         // Verify odd keys still exist and are sorted
@@ -184,7 +197,7 @@ mod tests {
 
         // Check only odd keys remain
         for i in 0u8..20 {
-            let result = tree.get(&[i], storage);
+            let result = tree.get_from_storage(&[i], storage);
             if i % 2 == 0 {
                 assert!(result.is_none(), "even key {} should be removed", i);
             } else {
@@ -199,20 +212,23 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc10 = create_loc(10);
-        tree.add(&[1], loc10, storage).expect("insert failed");
+        tree.add_to_storage(&[1], loc10, storage)
+            .expect("insert failed");
 
         let loc20 = create_loc(20);
-        tree.add(&[2], loc20, storage).expect("insert failed");
+        tree.add_to_storage(&[2], loc20, storage)
+            .expect("insert failed");
 
         let loc30 = create_loc(30);
-        tree.add(&[3], loc30, storage).expect("insert failed");
+        tree.add_to_storage(&[3], loc30, storage)
+            .expect("insert failed");
 
-        tree.remove(&[1], storage).unwrap();
+        tree.remove_from_storage(&[1], storage).unwrap();
 
-        assert!(tree.get(&[1], storage).is_none());
+        assert!(tree.get_from_storage(&[1], storage).is_none());
 
-        let r_loc2 = tree.get(&[2], storage).unwrap();
-        let r_loc3 = tree.get(&[3], storage).unwrap();
+        let r_loc2 = tree.get_from_storage(&[2], storage).unwrap();
+        let r_loc3 = tree.get_from_storage(&[3], storage).unwrap();
 
         assert!(is_loc_equal(r_loc2, loc20));
         assert!(is_loc_equal(r_loc3, loc30));
@@ -224,21 +240,24 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc10 = create_loc(10);
-        tree.add(&[1], loc10, storage).expect("insert failed");
+        tree.add_to_storage(&[1], loc10, storage)
+            .expect("insert failed");
 
         let loc20 = create_loc(20);
-        tree.add(&[2], loc20, storage).expect("insert failed");
+        tree.add_to_storage(&[2], loc20, storage)
+            .expect("insert failed");
 
         let loc30 = create_loc(30);
-        tree.add(&[3], loc30, storage).expect("insert failed");
+        tree.add_to_storage(&[3], loc30, storage)
+            .expect("insert failed");
 
-        tree.remove(&[3], storage).unwrap();
+        tree.remove_from_storage(&[3], storage).unwrap();
 
-        let r_loc1 = tree.get(&[1], storage).unwrap();
-        let r_loc2 = tree.get(&[2], storage).unwrap();
+        let r_loc1 = tree.get_from_storage(&[1], storage).unwrap();
+        let r_loc2 = tree.get_from_storage(&[2], storage).unwrap();
         assert!(is_loc_equal(r_loc1, loc10));
         assert!(is_loc_equal(r_loc2, loc20));
-        assert!(tree.get(&[3], storage).is_none());
+        assert!(tree.get_from_storage(&[3], storage).is_none());
     }
 
     // // ── Remove after splits ──────────────────────────────────────────────────────
@@ -251,19 +270,24 @@ mod tests {
         // Insert enough to trigger splits (11+ keys)
         for i in 0u8..15 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         // Remove some keys
-        tree.remove(&[2], storage).unwrap();
-        tree.remove(&[13], storage).unwrap();
+        tree.remove_from_storage(&[2], storage).unwrap();
+        tree.remove_from_storage(&[13], storage).unwrap();
 
         // Verify remaining keys
-        assert!(tree.get(&[2], storage).is_none());
-        assert!(tree.get(&[13], storage).is_none());
+        assert!(tree.get_from_storage(&[2], storage).is_none());
+        assert!(tree.get_from_storage(&[13], storage).is_none());
 
         for i in [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14] {
-            assert!(tree.get(&[i], storage).is_some(), "key {} should exist", i);
+            assert!(
+                tree.get_from_storage(&[i], storage).is_some(),
+                "key {} should exist",
+                i
+            );
         }
     }
 
@@ -275,33 +299,38 @@ mod tests {
         // Insert enough to trigger splits (11+ keys)
         for i in 0u8..100 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         // Remove some keys
-        tree.remove(&[0], storage).unwrap();
-        tree.remove(&[2], storage).unwrap();
-        tree.remove(&[4], storage).unwrap();
-        tree.remove(&[6], storage).unwrap();
-        tree.remove(&[8], storage).unwrap();
-        tree.remove(&[10], storage).unwrap();
+        tree.remove_from_storage(&[0], storage).unwrap();
+        tree.remove_from_storage(&[2], storage).unwrap();
+        tree.remove_from_storage(&[4], storage).unwrap();
+        tree.remove_from_storage(&[6], storage).unwrap();
+        tree.remove_from_storage(&[8], storage).unwrap();
+        tree.remove_from_storage(&[10], storage).unwrap();
 
         // Verify remaining keys
-        assert!(tree.get(&[0], storage).is_none());
-        assert!(tree.get(&[2], storage).is_none());
-        assert!(tree.get(&[4], storage).is_none());
-        assert!(tree.get(&[6], storage).is_none());
-        assert!(tree.get(&[8], storage).is_none());
-        assert!(tree.get(&[10], storage).is_none());
+        assert!(tree.get_from_storage(&[0], storage).is_none());
+        assert!(tree.get_from_storage(&[2], storage).is_none());
+        assert!(tree.get_from_storage(&[4], storage).is_none());
+        assert!(tree.get_from_storage(&[6], storage).is_none());
+        assert!(tree.get_from_storage(&[8], storage).is_none());
+        assert!(tree.get_from_storage(&[10], storage).is_none());
 
         for i in [1, 3, 5, 7, 9, 11, 12, 13, 14] {
-            assert!(tree.get(&[i], storage).is_some(), "key {} should exist", i);
+            assert!(
+                tree.get_from_storage(&[i], storage).is_some(),
+                "key {} should exist",
+                i
+            );
         }
 
         let mut missing = Vec::new();
 
         for i in 15u8..100 {
-            if tree.get(&[i], storage).is_none() {
+            if tree.get_from_storage(&[i], storage).is_none() {
                 missing.push(i);
             }
         }
@@ -323,20 +352,21 @@ mod tests {
         let count = 30;
         for i in 0u8..count {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         tree.root_page_location.load_page(storage).print(storage);
 
         // Remove half
         for i in 0u8..count / 2 {
-            tree.remove(&[i], storage).unwrap();
+            tree.remove_from_storage(&[i], storage).unwrap();
             println!("removed {}", i);
         }
 
         // Check remaining
         for i in 0u8..count {
-            let result = tree.get(&[i], storage);
+            let result = tree.get_from_storage(&[i], storage);
             if i < count / 2 {
                 assert!(result.is_none(), "key {} should be removed", i);
             } else {
@@ -357,13 +387,14 @@ mod tests {
         // Phase 1: Add initial elements (10x: 100 instead of 10)
         for i in 0u16..100 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Verify all initial keys exist
         for i in 0u16..100 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
@@ -371,13 +402,13 @@ mod tests {
 
         // Phase 2: Remove from middle (10x: keys 40-59 instead of 4-6)
         for i in 40u16..60 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         // Middle keys should be gone
         for i in 40u16..60 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "middle key {} should be removed",
                 i
             );
@@ -388,7 +419,7 @@ mod tests {
         for i in 0u16..100 {
             if !(40..60).contains(&i) {
                 assert!(
-                    tree.get(&[i as u8], storage).is_some(),
+                    tree.get_from_storage(&[i as u8], storage).is_some(),
                     "key {} should still exist",
                     i
                 );
@@ -397,13 +428,13 @@ mod tests {
 
         // Phase 3: Remove from end (10x: keys 80-99 instead of 8-9)
         for i in 80u16..100 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         // End keys should be gone
         for i in 80u16..100 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "end key {} should be removed",
                 i
             );
@@ -412,13 +443,14 @@ mod tests {
         // Phase 4: Add new elements (10x: 200-249 instead of 100-104)
         for i in 200u16..250 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // New keys should exist
         for i in 200u16..250 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "new key {} should exist",
                 i
             );
@@ -427,35 +459,35 @@ mod tests {
         // Phase 5: Remove again (10x: mixed)
         // from beginning: 0-9
         for i in 0u16..10 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
         // from newly added: 200-209
         for i in 200u16..210 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
         // from middle of original: 20-29
         for i in 20u16..30 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         // These should be gone
         for i in 0u16..10 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
         }
         for i in 200u16..210 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
         }
         for i in 20u16..30 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
@@ -464,28 +496,28 @@ mod tests {
         // These should remain
         for i in 10u16..20 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should remain",
                 i
             );
         }
         for i in 30u16..40 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should remain",
                 i
             );
         }
         for i in 60u16..80 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should remain",
                 i
             );
         }
         for i in 210u16..250 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should remain",
                 i
             );
@@ -502,17 +534,18 @@ mod tests {
         // Phase 1: Add initial elements (10x: 120 instead of 12)
         for i in 0u16..120 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Phase 2: Remove from end (10x: keys 100-119 instead of 10-11)
         for i in 100u16..120 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         for i in 100u16..120 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "end key {} should be removed",
                 i
             );
@@ -520,12 +553,12 @@ mod tests {
 
         // Phase 3: Remove from middle (10x: keys 40-59 instead of 4-6)
         for i in 40u16..60 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         for i in 40u16..60 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "middle key {} should be removed",
                 i
             );
@@ -534,17 +567,18 @@ mod tests {
         // Phase 4: Add new elements after removals (10x: 200-249 instead of 50-54)
         for i in 200u16..250 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Phase 5: Remove from new elements (10x: every other from 200-249)
         for i in (200u16..250).step_by(2) {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         for i in (200u16..250).step_by(2) {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "new key {} should be removed",
                 i
             );
@@ -554,14 +588,14 @@ mod tests {
         // Original keys that should remain: 0-39, 60-99
         for i in 0u16..40 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should be present",
                 i
             );
         }
         for i in 60u16..100 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should be present",
                 i
             );
@@ -569,7 +603,7 @@ mod tests {
         // New keys that should remain: odd ones from 200-249
         for i in (201u16..250).step_by(2) {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "new key {} should be present",
                 i
             );
@@ -578,21 +612,21 @@ mod tests {
         // Verify removed keys
         for i in 40u16..60 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
         }
         for i in 100u16..120 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
         }
         for i in (200u16..250).step_by(2) {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "new key {} should be removed",
                 i
             );
@@ -609,20 +643,21 @@ mod tests {
         // Phase 1: Add elements (10x: 80 instead of 8)
         for i in 0u16..80 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Phase 2: Remove all except one (key 30-39 instead of key 3)
         for i in 0u16..80 {
             if !(30..40).contains(&i) {
-                tree.remove(&[i as u8], storage).unwrap();
+                tree.remove_from_storage(&[i as u8], storage).unwrap();
             }
         }
 
         // Keys 30-39 should remain
         for i in 30u16..40 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should remain",
                 i
             );
@@ -630,7 +665,7 @@ mod tests {
         for i in 0u16..80 {
             if !(30..40).contains(&i) {
                 assert!(
-                    tree.get(&[i as u8], storage).is_none(),
+                    tree.get_from_storage(&[i as u8], storage).is_none(),
                     "key {} should be removed",
                     i
                 );
@@ -640,16 +675,17 @@ mod tests {
         // Phase 3: Add new elements (10x: 200-249 instead of 20-24)
         for i in 200u16..250 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Phase 4: Remove the last remaining original keys
         for i in 30u16..40 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
         for i in 30u16..40 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
@@ -658,7 +694,7 @@ mod tests {
         // Only new keys should remain
         for i in 200u16..250 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "new key {} should exist",
                 i
             );
@@ -675,42 +711,45 @@ mod tests {
         // Phase 1: Add initial set (10x: 60 instead of 6)
         for i in 0u16..60 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Remove from middle (10x: keys 20-39 instead of 2-3)
         for i in 20u16..40 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         // Add more (10x: 100-139 instead of 10-13)
         for i in 100u16..140 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Remove from middle again (10x: keys 110-119 instead of 11)
         for i in 110u16..120 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         // Add more (10x: 200-219 instead of 20-21)
         for i in 200u16..220 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Verify final state - removed keys
         for i in 20u16..40 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
         }
         for i in 110u16..120 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
@@ -719,35 +758,35 @@ mod tests {
         // Verify final state - remaining keys
         for i in 0u16..20 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
         }
         for i in 40u16..60 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
         }
         for i in 100u16..110 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
         }
         for i in 120u16..140 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
         }
         for i in 200u16..220 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
@@ -764,52 +803,54 @@ mod tests {
         // Phase 1: Add initial elements (10x: 50 instead of 5)
         for i in 0u16..50 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Phase 2: Remove from end (10x: keys 30-49 instead of 3-4)
         for i in 30u16..50 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         // Phase 3: Add many new elements to trigger splits (10x: 150-249 instead of 50-79)
         for i in 150u16..250 {
             let loc = create_loc(i as usize);
-            tree.add(&[i as u8], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i as u8], loc, storage)
+                .expect("insert failed");
         }
 
         // Phase 4: Remove from various positions in the split tree (10x)
         // from beginning: 0-9
         for i in 0u16..10 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
         // from middle of new range: 190-199
         for i in 190u16..200 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
         // from end of new range: 240-249
         for i in 240u16..250 {
-            tree.remove(&[i as u8], storage).unwrap();
+            tree.remove_from_storage(&[i as u8], storage).unwrap();
         }
 
         // Verify removals
         for i in 0u16..10 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
         }
         for i in 190u16..200 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
         }
         for i in 240u16..250 {
             assert!(
-                tree.get(&[i as u8], storage).is_none(),
+                tree.get_from_storage(&[i as u8], storage).is_none(),
                 "key {} should be removed",
                 i
             );
@@ -818,21 +859,21 @@ mod tests {
         // Verify some still exist
         for i in 10u16..30 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
         }
         for i in 150u16..190 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
         }
         for i in 200u16..240 {
             assert!(
-                tree.get(&[i as u8], storage).is_some(),
+                tree.get_from_storage(&[i as u8], storage).is_some(),
                 "key {} should exist",
                 i
             );
@@ -848,7 +889,7 @@ mod tests {
         let storage = &mut Cursor::new(vec![0u8; PAGE_SIZE]);
         let tree = make_tree(storage);
 
-        assert!(tree.get(&[42], storage).is_none());
+        assert!(tree.get_from_storage(&[42], storage).is_none());
     }
 
     // // ── Value correctness ─────────────────────────────────────────────────────────
@@ -861,17 +902,17 @@ mod tests {
         let mut tree = make_tree(storage);
 
         for i in 0u8..60 {
-            tree.add(&[i], create_loc(i as usize), storage)
+            tree.add_to_storage(&[i], create_loc(i as usize), storage)
                 .expect("insert failed");
         }
 
         // Remove every third key.
         for i in (0u8..60).step_by(3) {
-            tree.remove(&[i], storage).unwrap();
+            tree.remove_from_storage(&[i], storage).unwrap();
         }
 
         for i in 0u8..60 {
-            let result = tree.get(&[i], storage);
+            let result = tree.get_from_storage(&[i], storage);
             if i % 3 == 0 {
                 assert!(result.is_none(), "key {} should be removed", i);
             } else {
@@ -895,29 +936,29 @@ mod tests {
         let mut tree = make_tree(storage);
 
         for i in 0u8..30 {
-            tree.add(&[i], create_loc(i as usize), storage)
+            tree.add_to_storage(&[i], create_loc(i as usize), storage)
                 .expect("insert failed");
         }
 
         // Remove a spread of keys, then re-add them with different location values.
         let targets = [5u8, 10, 15, 20, 25];
         for &i in &targets {
-            tree.remove(&[i], storage).unwrap();
+            tree.remove_from_storage(&[i], storage).unwrap();
             assert!(
-                tree.get(&[i], storage).is_none(),
+                tree.get_from_storage(&[i], storage).is_none(),
                 "key {} should be absent after remove",
                 i
             );
         }
 
         for &i in &targets {
-            tree.add(&[i], create_loc(i as usize + 100), storage)
+            tree.add_to_storage(&[i], create_loc(i as usize + 100), storage)
                 .expect("re-insert failed");
         }
 
         for &i in &targets {
             let loc = tree
-                .get(&[i], storage)
+                .get_from_storage(&[i], storage)
                 .unwrap_or_else(|| panic!("re-inserted key {} should exist", i));
             assert!(
                 is_loc_equal(loc, create_loc(i as usize + 100)),
@@ -930,7 +971,7 @@ mod tests {
         for i in 0u8..30 {
             if !targets.contains(&i) {
                 let loc = tree
-                    .get(&[i], storage)
+                    .get_from_storage(&[i], storage)
                     .unwrap_or_else(|| panic!("untouched key {} should exist", i));
                 assert!(
                     is_loc_equal(loc, create_loc(i as usize)),
@@ -956,19 +997,19 @@ mod tests {
         let mut tree = make_tree(storage);
 
         for i in 0u8..15 {
-            tree.add(&[i], create_loc(i as usize), storage)
+            tree.add_to_storage(&[i], create_loc(i as usize), storage)
                 .expect("insert failed");
         }
 
-        tree.remove(&[4], storage).unwrap();
-        tree.remove(&[8], storage).unwrap();
+        tree.remove_from_storage(&[4], storage).unwrap();
+        tree.remove_from_storage(&[8], storage).unwrap();
 
         assert!(
-            tree.get(&[4], storage).is_none(),
+            tree.get_from_storage(&[4], storage).is_none(),
             "separator key 4 should be removed"
         );
         assert!(
-            tree.get(&[8], storage).is_none(),
+            tree.get_from_storage(&[8], storage).is_none(),
             "separator key 8 should be removed"
         );
 
@@ -976,7 +1017,7 @@ mod tests {
             if i == 4 || i == 8 {
                 continue;
             }
-            let loc = tree.get(&[i], storage).unwrap_or_else(|| {
+            let loc = tree.get_from_storage(&[i], storage).unwrap_or_else(|| {
                 panic!("key {} should still be findable after separator removal", i)
             });
             assert!(
@@ -999,17 +1040,17 @@ mod tests {
         let mut tree = make_tree(storage);
 
         for i in 0u8..100 {
-            tree.add(&[i], create_loc(i as usize), storage)
+            tree.add_to_storage(&[i], create_loc(i as usize), storage)
                 .expect("insert failed");
         }
 
         for i in 10u8..100 {
-            tree.remove(&[i], storage).unwrap();
+            tree.remove_from_storage(&[i], storage).unwrap();
         }
 
         for i in 0u8..10 {
             let loc = tree
-                .get(&[i], storage)
+                .get_from_storage(&[i], storage)
                 .unwrap_or_else(|| panic!("key {} should exist after collapse", i));
             assert!(
                 is_loc_equal(loc, create_loc(i as usize)),
@@ -1032,7 +1073,7 @@ mod tests {
 
         let count: u8 = 100;
         for i in 0..count {
-            tree.add(&[i], create_loc(i as usize), storage)
+            tree.add_to_storage(&[i], create_loc(i as usize), storage)
                 .expect("insert failed");
         }
 
@@ -1047,12 +1088,12 @@ mod tests {
         }
 
         for &key in &keys {
-            tree.remove(&[key], storage).unwrap();
+            tree.remove_from_storage(&[key], storage).unwrap();
         }
 
         for i in 0..count {
             assert!(
-                tree.get(&[i], storage).is_none(),
+                tree.get_from_storage(&[i], storage).is_none(),
                 "key {} should be removed",
                 i
             );
@@ -1075,7 +1116,7 @@ mod tests {
             for low in 0u8..10 {
                 let key = [high, low];
                 let idx = (high as usize) * 10 + (low as usize);
-                tree.add(key.as_slice(), create_loc(idx), storage)
+                tree.add_to_storage(key.as_slice(), create_loc(idx), storage)
                     .expect("insert failed");
             }
         }
@@ -1086,7 +1127,7 @@ mod tests {
                 let key = [high, low];
                 let idx = (high as usize) * 10 + (low as usize);
                 let loc = tree
-                    .get(key.as_slice(), storage)
+                    .get_from_storage(key.as_slice(), storage)
                     .unwrap_or_else(|| panic!("key {:?} should exist", key));
                 assert!(
                     is_loc_equal(loc, create_loc(idx)),
@@ -1097,19 +1138,19 @@ mod tests {
         }
 
         // Remove one key per high-byte group and verify ordering is not disturbed.
-        tree.remove(&[0, 5], storage).unwrap();
-        tree.remove(&[1, 0], storage).unwrap();
-        tree.remove(&[2, 9], storage).unwrap();
+        tree.remove_from_storage(&[0, 5], storage).unwrap();
+        tree.remove_from_storage(&[1, 0], storage).unwrap();
+        tree.remove_from_storage(&[2, 9], storage).unwrap();
 
-        assert!(tree.get(&[0, 5], storage).is_none());
-        assert!(tree.get(&[1, 0], storage).is_none());
-        assert!(tree.get(&[2, 9], storage).is_none());
+        assert!(tree.get_from_storage(&[0, 5], storage).is_none());
+        assert!(tree.get_from_storage(&[1, 0], storage).is_none());
+        assert!(tree.get_from_storage(&[2, 9], storage).is_none());
 
         // Neighbours of the removed keys should be unaffected.
-        assert!(tree.get(&[0, 4], storage).is_some());
-        assert!(tree.get(&[0, 6], storage).is_some());
-        assert!(tree.get(&[1, 1], storage).is_some());
-        assert!(tree.get(&[2, 8], storage).is_some());
+        assert!(tree.get_from_storage(&[0, 4], storage).is_some());
+        assert!(tree.get_from_storage(&[0, 6], storage).is_some());
+        assert!(tree.get_from_storage(&[1, 1], storage).is_some());
+        assert!(tree.get_from_storage(&[2, 8], storage).is_some());
 
         check_is_root_sorted(&mut tree, storage);
     }

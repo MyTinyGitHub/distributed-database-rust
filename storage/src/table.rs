@@ -1,3 +1,5 @@
+use crate::btree::location::Location;
+use crate::btree::tree::PagingBtree;
 use crate::heap_file::HeapFile;
 use crate::record::EngineRecord;
 use crate::storage_error::StorageError;
@@ -7,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 pub struct Table {
     table_name: String,
     file: HeapFile,
-    indexes: HashMap<String, BTreeMap<Vec<u8>, EngineRecord>>,
+    indexes: HashMap<String, PagingBtree>,
 }
 
 impl Table {
@@ -19,10 +21,10 @@ impl Table {
         })
     }
 
-    pub fn insert_data(
+    pub fn insert(
         &mut self,
         index_name: &str,
-        (key, value): (Vec<u8>, Vec<u8>),
+        (key, value): (&[u8], Vec<u8>),
     ) -> Result<(), StorageError> {
         let (start_offset, size) = self.file.insert(value);
         let engine_record = EngineRecord {
@@ -33,7 +35,7 @@ impl Table {
         self.indexes
             .get_mut(index_name)
             .ok_or_else(|| StorageError::IndexNotFound(index_name.to_string()))?
-            .insert(key, engine_record);
+            .insert(key, Location::Value(engine_record))?;
 
         Ok(())
     }
@@ -50,28 +52,30 @@ impl Table {
         Ok(())
     }
 
-    pub fn retrieve_data(&self, index_name: &str, key: Vec<u8>) -> Result<Vec<u8>, StorageError> {
-        let engine_header = &self
+    pub fn get(&self, index_name: &str, key: Vec<u8>) -> Result<Vec<u8>, StorageError> {
+        let location = &self
             .indexes
             .get(index_name)
             .ok_or_else(|| StorageError::IndexNotFound(index_name.to_string()))?
             .get(&key)
-            .ok_or(StorageError::IndexKeyNotFound())?
-            .data;
+            .ok_or(StorageError::IndexKeyNotFound())?;
 
-        let data = &self
-            .file
-            .read(engine_header.start_offset, engine_header.size);
+        if let Location::Value(data) = location {
+            let data = &self.file.read(data.data.start_offset, data.data.size);
 
-        Ok(data.clone())
+            Ok(data.clone())
+        } else {
+            Ok(Vec::new())
+        }
     }
 
-    pub fn create_index(&mut self, index: &str) -> Result<(), StorageError> {
-        if self.indexes.contains_key(index) {
-            return Err(StorageError::IndexAlreadyExists(index.to_string()));
+    pub fn create_index(&mut self, index_name: &str) -> Result<(), StorageError> {
+        if self.indexes.contains_key(index_name) {
+            return Err(StorageError::IndexAlreadyExists(index_name.to_string()));
         }
 
-        self.indexes.insert(index.to_string(), BTreeMap::new());
+        self.indexes
+            .insert(index_name.to_string(), PagingBtree::new(index_name));
 
         Ok(())
     }

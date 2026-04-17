@@ -1,8 +1,12 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct EngineRecord {
     pub version: u8,
     pub data: EngineHeader,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct EngineHeader {
     // pub expired: u64,
     // pub created: u64,

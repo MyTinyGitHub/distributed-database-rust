@@ -45,7 +45,8 @@ mod tests {
 
         for i in 0u8..6 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         let len = storage.seek(SeekFrom::End(0)).unwrap();
@@ -72,7 +73,8 @@ mod tests {
 
         for i in 0u8..11 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         let len = storage.seek(SeekFrom::End(0)).unwrap();
@@ -97,11 +99,12 @@ mod tests {
 
         for i in 0u8..11 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         for i in 0u8..11 {
-            let result = tree.get(&[i], storage);
+            let result = tree.get_from_storage(&[i], storage);
             assert!(result.is_some(), "key {} not found after split", i);
         }
     }
@@ -113,7 +116,8 @@ mod tests {
 
         for i in 0u8..MAX_KEYS_PER_PAGE as u8 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         let len = storage.seek(SeekFrom::End(0)).unwrap();
@@ -140,7 +144,8 @@ mod tests {
 
         for i in 0u8..=(MAX_KEYS_PER_PAGE as u8) {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         let len = storage.seek(SeekFrom::End(0)).unwrap();
@@ -157,9 +162,10 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc99 = create_loc(99);
-        tree.add(&[42], loc99, storage).expect("insert failed");
+        tree.add_to_storage(&[42], loc99, storage)
+            .expect("insert failed");
 
-        let result = tree.get(&[42], storage);
+        let result = tree.get_from_storage(&[42], storage);
         assert!(result.is_some(), "single inserted key not found");
         assert!(
             is_loc_equal(result.unwrap(), loc99),
@@ -176,11 +182,12 @@ mod tests {
 
         for i in (0u8..11).rev() {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         for i in 0u8..11 {
-            let result = tree.get(&[i], storage);
+            let result = tree.get_from_storage(&[i], storage);
             assert!(
                 result.is_some(),
                 "key {} not found after reverse order insert",
@@ -195,12 +202,14 @@ mod tests {
         let mut tree = make_tree(storage);
 
         let loc10 = create_loc(10);
-        tree.add(&[1], loc10, storage).expect("insert failed");
+        tree.add_to_storage(&[1], loc10, storage)
+            .expect("insert failed");
 
         let loc20 = create_loc(20);
-        tree.add(&[1], loc20, storage).expect("insert failed");
+        tree.add_to_storage(&[1], loc20, storage)
+            .expect("insert failed");
 
-        let result = tree.get(&[1], storage);
+        let result = tree.get_from_storage(&[1], storage);
         assert!(result.is_some(), "key not found after duplicate insert");
     }
 
@@ -212,14 +221,15 @@ mod tests {
         let count = (MAX_KEYS_PER_PAGE * 10) as u8;
         for i in 0u8..count {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         tree.root_page_location.load_page(storage).print(storage);
 
         for i in 0u8..count {
             let loc = create_loc(i as usize);
-            let result = tree.get(&[i], storage);
+            let result = tree.get_from_storage(&[i], storage);
             assert!(
                 is_loc_equal(loc, result.unwrap()),
                 "key {} not found after multiple splits",
@@ -236,7 +246,8 @@ mod tests {
         let keys: Vec<u8> = vec![5, 3, 8, 1, 9, 2, 7, 4, 6, 0, 11, 10];
         for &k in &keys {
             let loc = create_loc(k as usize);
-            tree.add(&[k], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[k], loc, storage)
+                .expect("insert failed");
         }
 
         check_is_root_sorted(&mut tree, storage);
@@ -251,7 +262,8 @@ mod tests {
 
         for i in 0u8..(MAX_KEYS_PER_PAGE as u8) {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         let root = tree.root_page_location.load_page(storage);
@@ -297,7 +309,8 @@ mod tests {
         let count = MAX_KEYS_PER_PAGE + 1;
         for i in 0u8..count as u8 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         check_is_root_sorted(&mut tree, storage);
@@ -310,7 +323,8 @@ mod tests {
 
         for i in 0u8..(MAX_KEYS_PER_PAGE * 3) as u8 {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         let len = storage.seek(SeekFrom::End(0)).unwrap();
@@ -332,14 +346,15 @@ mod tests {
 
         for i in 0u8..=(MAX_KEYS_PER_PAGE as u8) {
             let loc = create_loc(i as usize);
-            tree.add(&[i], loc, storage).expect("insert failed");
+            tree.add_to_storage(&[i], loc, storage)
+                .expect("insert failed");
         }
 
         let tree2 = make_tree(storage);
         storage.seek(SeekFrom::Start(0)).unwrap();
 
         for i in 0u8..=(MAX_KEYS_PER_PAGE as u8) {
-            let result = tree2.get(&[i], &mut storage);
+            let result = tree2.get_from_storage(&[i], &mut storage);
             assert!(result.is_some(), "key {} not found after reconstruction", i);
         }
     }

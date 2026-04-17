@@ -41,7 +41,7 @@ impl StorageEngine {
         self.tables
             .get(table_name)
             .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?
-            .retrieve_data(index_name, index_key)
+            .get(index_name, index_key)
     }
 
     pub fn insert_to_table(
@@ -56,7 +56,7 @@ impl StorageEngine {
             .get_mut(table_name)
             .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?;
 
-        table.insert_data(index_name, (key, data))
+        table.insert(index_name, (&key, data))
     }
 
     pub fn create_table(&mut self, table_name: &str) -> Result<(), StorageError> {

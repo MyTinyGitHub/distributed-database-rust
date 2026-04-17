@@ -2,7 +2,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 
 use serde::{Deserialize, Serialize};
 
-use crate::btree::page::Page;
+use crate::{btree::page::Page, record::EngineRecord};
 
 pub trait PageStore: Read + Write + Seek {}
 impl<T: Read + Write + Seek> PageStore for T {}
@@ -11,7 +11,7 @@ const PAGE_SIZE: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Location {
-    Value(RefValueLocation),
+    Value(EngineRecord),
     Page(RefPageLocation),
 }
 

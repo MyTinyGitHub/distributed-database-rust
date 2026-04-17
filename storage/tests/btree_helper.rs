@@ -1,26 +1,32 @@
 use std::{io::Cursor, path::PathBuf};
 
-use storage::btree::{
-    leaf_page::Leaf,
-    location::{Location, PageStore, RefPageLocation, RefValueLocation},
-    page::Page,
-    tree::PagingBtree,
+use storage::{
+    btree::{
+        leaf_page::Leaf,
+        location::{Location, PageStore, RefPageLocation, RefValueLocation},
+        page::Page,
+        tree::PagingBtree,
+    },
+    record::{EngineHeader, EngineRecord},
 };
 
 pub const PAGE_SIZE: usize = 4096;
 pub const MAX_KEYS_PER_PAGE: usize = 10;
 
 fn create_loc(value: usize) -> Location {
-    Location::Value(RefValueLocation {
-        size: value,
-        start_offset: value as u64,
+    Location::Value(EngineRecord {
+        version: 1,
+        data: EngineHeader {
+            start_offset: value as u64,
+            size: value,
+        },
     })
 }
 
 fn is_loc_equal(l_loc: Location, r_loc: Location) -> bool {
     match (l_loc, r_loc) {
         (Location::Value(l_v), Location::Value(r_v)) => {
-            l_v.size == r_v.size && l_v.start_offset == r_v.start_offset
+            l_v.data.size == r_v.data.size && l_v.data.start_offset == r_v.data.start_offset
         }
         (Location::Page(l_p), Location::Page(r_p)) => l_p.start_offset == r_p.start_offset,
         _ => false,
