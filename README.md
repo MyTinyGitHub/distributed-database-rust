@@ -11,57 +11,67 @@ A database engine built from scratch in Rust. Storage uses a B-tree index over a
 | `common` | ✅ Done | Shared types, errors, serialization, protobuf definitions |
 | `wal` | ✅ Done | Write-Ahead Log with HMAC checksums, manifest management |
 | `storage` | ✅ Done | gRPC partition node — heap file storage, B-tree index, manifest persistence |
-| `query` | 🔨 In Progress | gRPC client stub; SQL parser/planner not yet implemented |
-| `join` | 📋 Planned | Streaming join execution module |
+| `query` | 🔨 In Progress | gRPC test client for storage; SQL parser/planner not yet implemented |
+| `join` | 📋 Planned | Stub only; streaming join execution not yet implemented |
 
 ---
 
 ## Architecture
 
+Two independent gRPC services are currently running. The query layer and join module are not yet integrated.
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                         query                                 │
-│                   (SQL → logical plan)                       │
-└──────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
-│                       coordinator                             │
-│          (physical planning → execution → catalog)          │
-│                         join                                  │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              query (gRPC test client — WIP)                  │
+│         drives storage directly; no SQL layer yet           │
+└─────────────────────────────────────────────────────────────┘
                               │ gRPC
                               ▼
-┌────────────┐  ┌────────────┐  ┌────────────┐
-│ partition  │  │ partition  │  │ partition  │
-│   node 1   │  │   node 2   │  │   node 3   │
-│ B-tree idx │  │ B-tree idx │  │ B-tree idx │
-│ Heap file  │  │ Heap file  │  │ Heap file  │
-│ Manifest   │  │ Manifest   │  │ Manifest   │
-└────────────┘  └────────────┘  └────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              storage  [:50052]                               │
+│         StorageEngineService (gRPC)                         │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Table                                               │   │
+│  │  ├── B-tree index  (paged, key → heap pointer)      │   │
+│  │  └── Heap file     (append-only row store)           │   │
+│  └─────────────────────────────────────────────────────┘   │
+│  Manifest  (JSON, atomic write-to-temp+rename)              │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│              wal  [:50051]  (standalone, not yet integrated) │
+│         WalService (gRPC)                                   │
+│  ├── WalWriter  — appends HMAC-signed records to segment    │
+│  ├── WalReader  — reads + verifies records from segments    │
+│  └── Manifest   — tracks active segment per partition       │
+└─────────────────────────────────────────────────────────────┘
+
+┌──────────┐
+│   join   │  (stub — not implemented)
+└──────────┘
 ```
 
-### Layers
+### Services
 
-- **query** — SQL parsing, lexing, logical query planning (in progress)
-- **coordinator** — Physical planner, executor, catalog, join orchestration (planned)
-- **storage** — Partition nodes: B-tree index → heap file, with manifest for durability
+- **storage** `[:50052]` — The core storage engine. Exposes `StorageEngineService` over gRPC. Each table holds a heap file (append-only row store) and one or more named B-tree indexes mapping keys to heap offsets. A JSON manifest is persisted atomically on every schema change and reloaded on startup.
+
+- **wal** `[:50051]` — Standalone write-ahead log service. Appends HMAC-SHA256-signed records to rolling segment files; a per-partition manifest tracks the active segment and the HMAC key. Not yet called by the storage engine — integration is a planned next step.
+
+- **query** — Currently a gRPC client that drives the storage engine directly. SQL parsing and logical/physical planning are not yet implemented.
+
+- **join** — Stub only.
 
 ### Storage Engine
 
-Each partition node exposes a gRPC service (`StorageEngineService`) and manages:
+`StorageEngineService` supports: `CreateTable`, `DropTable`, `RegisterIndex`, `DropIndex`, `Write`, `ReadByIndex`.
 
-- **Heap file** — append-only row storage; each insert returns an `(offset, size)` pointer
-- **B-tree index** — paged B-tree mapping index keys to heap file locations
-- **Manifest** — JSON manifest persisted atomically (write-to-temp + rename) tracking tables and their indexes; loaded on startup to restore state across restarts
-
-Supported operations: `CreateTable`, `DropTable`, `RegisterIndex`, `DropIndex`, `Write`, `ReadByIndex`.
+Each `Write` inserts a row into the heap file and updates every registered B-tree index for that table. `ReadByIndex` traverses the B-tree to find the heap offset and returns the raw row bytes.
 
 ### Key Design Decisions
 
 - **Shared-nothing architecture** — Partition nodes are fully autonomous
 - **Hash-based partitioning** — Prevents hotspots under uniform write load
-- **WAL-first writes** — WAL persisted before any mutation is acknowledged
+- **WAL-first writes** — WAL persisted before any mutation is acknowledged (planned integration)
 - **Fail fast** — Errors surface immediately, bounded retry with circuit breakers
 - **Stateless join module** — Streams chunks, never buffers full datasets
 
