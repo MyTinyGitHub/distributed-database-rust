@@ -1,6 +1,6 @@
 # Homelab Database
 
-A distributed database engine built from scratch in Rust with an LSM tree storage engine.
+A database engine built from scratch in Rust. Storage uses a B-tree index over a heap file; queries are routed via gRPC.
 
 ---
 
@@ -10,9 +10,9 @@ A distributed database engine built from scratch in Rust with an LSM tree storag
 |-----------|--------|-------------|
 | `common` | ✅ Done | Shared types, errors, serialization, protobuf definitions |
 | `wal` | ✅ Done | Write-Ahead Log with HMAC checksums, manifest management |
-| `storage` | 🔨 In Progress | Partition node, MemTable, SSTable, LSM tree |
-| `query` | 🔨 In Progress | SQL parser, lexer, logical/physical planning |
-| `join` | 🔨 In Progress | Streaming join execution module |
+| `storage` | ✅ Done | gRPC partition node — heap file storage, B-tree index, manifest persistence |
+| `query` | 🔨 In Progress | gRPC client stub; SQL parser/planner not yet implemented |
+| `join` | 📋 Planned | Streaming join execution module |
 
 ---
 
@@ -30,22 +30,32 @@ A distributed database engine built from scratch in Rust with an LSM tree storag
 │          (physical planning → execution → catalog)          │
 │                         join                                  │
 └──────────────────────────────────────────────────────────────┘
-                              │
+                              │ gRPC
                               ▼
 ┌────────────┐  ┌────────────┐  ┌────────────┐
 │ partition  │  │ partition  │  │ partition  │
 │   node 1   │  │   node 2   │  │   node 3   │
-│ WAL        │  │ WAL        │  │ WAL        │
-│ MemTable   │  │ MemTable   │  │ MemTable   │
-│ SSTable    │  │ SSTable    │  │ SSTable    │
+│ B-tree idx │  │ B-tree idx │  │ B-tree idx │
+│ Heap file  │  │ Heap file  │  │ Heap file  │
+│ Manifest   │  │ Manifest   │  │ Manifest   │
 └────────────┘  └────────────┘  └────────────┘
 ```
 
 ### Layers
 
-- **query** — SQL parsing, lexing, logical query planning
-- **coordinator** — Physical planner, executor, catalog, join orchestration
-- **storage** — Partition nodes: WAL → MemTable → SSTable (LSM tree)
+- **query** — SQL parsing, lexing, logical query planning (in progress)
+- **coordinator** — Physical planner, executor, catalog, join orchestration (planned)
+- **storage** — Partition nodes: B-tree index → heap file, with manifest for durability
+
+### Storage Engine
+
+Each partition node exposes a gRPC service (`StorageEngineService`) and manages:
+
+- **Heap file** — append-only row storage; each insert returns an `(offset, size)` pointer
+- **B-tree index** — paged B-tree mapping index keys to heap file locations
+- **Manifest** — JSON manifest persisted atomically (write-to-temp + rename) tracking tables and their indexes; loaded on startup to restore state across restarts
+
+Supported operations: `CreateTable`, `DropTable`, `RegisterIndex`, `DropIndex`, `Write`, `ReadByIndex`.
 
 ### Key Design Decisions
 
@@ -72,9 +82,17 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full design documentation.
 │   │   ├── manifest.rs  # WAL manifest (active segment, HMAC key)
 │   │   └── wal.rs       # WAL reader/writer with HMAC checksums
 │   └── data/            # WAL segment files
-├── storage/             # Partition node (WIP)
-├── query/               # Query gateway (WIP)
-├── join/                # Join module (WIP)
+├── storage/             # Partition node — gRPC server, B-tree index, heap file
+│   └── src/
+│       ├── btree/       # Paged B-tree (internal/leaf pages, page I/O)
+│       ├── heap_file.rs # Append-only row store
+│       ├── manifest.rs  # Table/index manifest with atomic saves
+│       ├── record.rs    # On-disk record format
+│       ├── table.rs     # Table: heap file + named B-tree indexes
+│       ├── config.rs    # Directory configuration
+│       └── main.rs      # gRPC server entry point
+├── query/               # Query gateway (WIP — gRPC client stub only)
+├── join/                # Join module (planned stub)
 └── docs/
     └── adr/             # Architecture Decision Records
 ```
@@ -88,8 +106,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full design documentation.
 cargo build --workspace
 
 # Build specific crate
+cargo build -p storage
 cargo build -p wal
-cargo build -p common
 
 # Run tests
 cargo test --workspace
@@ -97,6 +115,13 @@ cargo test --workspace
 # Check formatting and linting
 cargo fmt --check
 cargo clippy --workspace
+```
+
+### Running the storage node
+
+```bash
+cargo run -p storage
+# Listens on [::1]:50052
 ```
 
 ---
@@ -117,5 +142,6 @@ cargo clippy --workspace
 ## Tech Stack
 
 - **Language:** Rust
-- **Serialization:** bincode, protobuf (tonic-build)
+- **Transport:** gRPC (tonic + prost)
+- **Serialization:** bincode (row data), JSON (manifest), protobuf (wire protocol)
 - **Crypto:** hmac-sha256 for WAL integrity
