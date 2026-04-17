@@ -11,6 +11,7 @@ pub struct Config {
 pub struct DirectoriesConfig {
     pub heap_files: String,
     pub index_files: String,
+    pub manifest: String,
 }
 
 impl Config {

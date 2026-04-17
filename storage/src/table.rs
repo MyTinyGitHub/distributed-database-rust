@@ -29,6 +29,23 @@ impl Table {
         })
     }
 
+    pub fn load(table_name: &str, indexes: &Vec<String>, config: &DirectoriesConfig) -> Self {
+        let mut index_map = HashMap::new();
+        let index_location = PathBuf::from(&config.index_files).join(table_name);
+
+        for index in indexes {
+            let index_path = index_location.clone().join(&index).with_extension("idx");
+
+            index_map.insert(index.to_string(), PagingBtree::open(&index_path));
+        }
+
+        Self {
+            file: HeapFile::new(&config.heap_files, table_name).unwrap(),
+            index_location,
+            indexes: index_map,
+        }
+    }
+
     pub fn insert(
         &mut self,
         index_name: &str,
@@ -38,6 +55,8 @@ impl Table {
             "inserting (key: {:?}, value: {:?}) to index {}",
             key, value, index_name
         );
+
+        //write to wal
 
         let (start_offset, size) = self.file.insert(value);
 

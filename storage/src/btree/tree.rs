@@ -30,7 +30,7 @@ impl PagingBtree<File> {
 
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        let create_new = !std::fs::exists(file_path).unwrap();
+        let exists = std::fs::exists(file_path).unwrap();
 
         let mut file = OpenOptions::new()
             .read(true)
@@ -39,7 +39,7 @@ impl PagingBtree<File> {
             .open(file_path)
             .unwrap();
 
-        if create_new {
+        if !exists {
             let root_page = Page::Leaf(Leaf {
                 keys: Vec::new(),
                 values: Vec::new(),

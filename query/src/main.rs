@@ -40,16 +40,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let create_table_request = Request::new(engine_request);
-    let _ = client.create_table(create_table_request).await?;
+    //let _ = client.create_table(create_table_request).await?;
 
     let register_index_request = RegisterIndexRequest {
         table: table_name.clone(),
         index_name: index_name.clone(),
     };
 
-    let _ = client
-        .register_index(Request::new(register_index_request))
-        .await?;
+    //let _ = client
+    //    .register_index(Request::new(register_index_request))
+    //    .await?;
 
     let index_key_struct = IndexKey {
         index_name: index_name.clone(),
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         index_keys: index_keys.clone(),
     };
 
-    let _ = client.write(Request::new(insert_data)).await?;
+    //let _ = client.write(Request::new(insert_data)).await?;
 
     let index_key_struct = IndexKey {
         index_name: index_name.clone(),
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         index_keys: index_keys_d,
     };
 
-    let _ = client.write(Request::new(insert_data)).await?;
+    //let _ = client.write(Request::new(insert_data)).await?;
 
     let read_by_index = ReadByIndexRequest {
         table: table_name.clone(),

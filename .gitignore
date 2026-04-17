@@ -4,6 +4,7 @@ Cargo.lock
 
 # Data directories (regenerated at runtime)
 */data/*
+*data/*
 
 # IDE
 .idea/

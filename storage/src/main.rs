@@ -9,7 +9,7 @@ use std::{
 };
 
 use log::info;
-use storage::{config::Config, storage_error::StorageError, table::Table};
+use storage::{config::Config, manifest::Manifest, storage_error::StorageError, table::Table};
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_reflection::server::Builder;
 
@@ -22,14 +22,18 @@ use crate::proto_storage::{
 
 struct StorageEngine {
     config: Arc<Config>,
+    manifest: Arc<RwLock<Manifest>>,
     pub tables: HashMap<String, Table>,
 }
 
 impl StorageEngine {
-    pub fn new(config: Arc<Config>) -> Self {
+    pub fn new(config: Arc<Config>, manifest: Arc<RwLock<Manifest>>) -> Self {
+        let tables = manifest.read().unwrap().load_tables(&config.directories);
+
         Self {
             config: config.clone(),
-            tables: HashMap::new(),
+            manifest: manifest.clone(),
+            tables,
         }
     }
 
@@ -65,6 +69,8 @@ impl StorageEngine {
             return Err(StorageError::TableAlreadyExists(table_name.to_string()));
         }
 
+        self.manifest.write().unwrap().add_table(table_name);
+
         let table = Table::new(table_name, &self.config.directories)?;
 
         self.tables.insert(table_name.to_string(), table);
@@ -93,6 +99,11 @@ impl StorageEngine {
     }
 
     pub fn create_index(&mut self, table_name: &str, index_name: &str) -> Result<(), StorageError> {
+        self.manifest
+            .write()
+            .unwrap()
+            .add_index(table_name, index_name);
+
         self.tables
             .get_mut(table_name)
             .ok_or_else(|| StorageError::TableNotFound(table_name.to_string()))?
@@ -234,11 +245,14 @@ impl StorageEngineService for StorageEngineServer {
 async fn main() -> Result<(), Box<dyn Error>> {
     log4rs::init_file("log/config/log4rs.yaml", Default::default())?;
 
+    info!("loading manifest and config");
     let config = Arc::new(Config::load("storage/config.toml")?);
+    let manifest = Arc::new(RwLock::new(Manifest::load(&config.directories)?));
+    info!("loaded manifest and config");
 
     let addr = "[::1]:50052".parse()?;
 
-    let storage_engine = StorageEngine::new(config);
+    let storage_engine = StorageEngine::new(config, manifest);
     let storage_engine_server = StorageEngineServer::new(storage_engine);
 
     let reflection = Builder::configure()

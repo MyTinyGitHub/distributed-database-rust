@@ -1,3 +1,4 @@
 [directories]
 heap_files = "./data/heaps"
 index_files = "./data/indexes"
+manifest = "./data/config/storage"
