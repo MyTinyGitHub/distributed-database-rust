@@ -1,10 +1,18 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     storage_error::StorageError,
-    wal_client::wal::{wal_service_client::WalServiceClient, WalOperation, WriteRequest},
+    wal_client::wal::{wal_service_client::WalServiceClient, WriteRequest},
 };
 
 pub mod wal {
     tonic::include_proto!("wal");
+}
+
+#[derive(Serialize, Deserialize)]
+struct WalPayload {
+    key: Vec<u8>,
+    value: Vec<u8>,
 }
 
 pub async fn write(key: Vec<u8>, value: Vec<u8>) -> Result<(), StorageError> {
@@ -12,12 +20,14 @@ pub async fn write(key: Vec<u8>, value: Vec<u8>) -> Result<(), StorageError> {
         .await
         .map_err(|_| StorageError::WalServiceNotAvailable())?;
 
+    let wal_payload = WalPayload { key, value };
+
+    let payload = bincode::serialize(&wal_payload).unwrap();
+
     client
         .write(tonic::Request::new(WriteRequest {
-            partition_name: "db1".to_string(),
-            operation: WalOperation::Put as i32,
-            key,
-            value,
+            service_id: 1,
+            payload,
         }))
         .await
         .map_err(|_| StorageError::WalWriteFailed())?;

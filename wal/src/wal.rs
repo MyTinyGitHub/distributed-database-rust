@@ -2,6 +2,7 @@ use std::{
     fs::OpenOptions,
     io::{Read, Write},
     sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use hmac_sha256::HMAC;
@@ -37,21 +38,9 @@ impl From<bincode::Error> for WalError {
 pub struct WalRecord {
     pub version: u8,
     pub check_sum: [u8; 32],
-    pub data: WalRecordData,
-}
-
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-#[repr(u8)]
-pub enum WalOperation {
-    Update = 1,
-    Delete = 2,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct WalRecordData {
-    pub key: Vec<u8>,
-    pub value: Vec<u8>,
-    pub operation: WalOperation,
+    pub lsn: u64,
+    pub timestamp: u64,
+    pub data: Vec<u8>,
 }
 
 pub struct WalWriter {
@@ -72,10 +61,10 @@ impl WalReader {
         }
     }
 
-    pub async fn read(&self, partition_name: &str) -> Result<Vec<WalRecordData>, WalError> {
+    pub async fn read(&self, service_id: u8) -> Result<Vec<Vec<u8>>, WalError> {
         let manifest = self.manifest.read().await;
-        let wal_files = manifest.pending_file_location(partition_name);
-        let mut result: Vec<WalRecordData> = Vec::new();
+        let wal_files = manifest.pending_file_location(service_id);
+        let mut result: Vec<Vec<u8>> = Vec::new();
 
         for file in wal_files {
             let file_path = format!("{}/{}", &self.config.wal_directory, file);
@@ -100,24 +89,15 @@ impl WalWriter {
         }
     }
 
-    pub async fn write(
-        &self,
-        partition_name: &str,
-        operation: WalOperation,
-        key: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<(), WalError> {
-        info!(
-            "writing: operation - {:?}, key - {:?}, value - {:?}",
-            operation, key, value
-        );
+    pub async fn write(&self, service_id: u8, payload: Vec<u8>) -> Result<(), WalError> {
+        info!("writing: operation - {}", service_id);
 
         let mut manifest = self.manifest.write().await;
 
-        manifest.wal_partition_init(&partition_name);
-        manifest.wal_maybe_increment(partition_name);
+        manifest.wal_partition_init(service_id);
+        manifest.wal_maybe_increment(service_id);
 
-        let file_name = manifest.wal_filename(partition_name);
+        let file_name = manifest.wal_filename(service_id);
 
         let file_path = format!("{}/{}", &self.config.wal_directory, file_name);
 
@@ -128,7 +108,7 @@ impl WalWriter {
 
         let hmac_key = &manifest.wal_manifest.hmac_key;
 
-        write_wal(&mut writer, hmac_key, operation, key, value)?;
+        write_wal(&mut writer, hmac_key, payload)?;
 
         writer.flush()?;
 
@@ -136,19 +116,7 @@ impl WalWriter {
     }
 }
 
-impl WalRecordData {
-    pub fn generate_checksum(&self, hmac_key: &[u8]) -> [u8; 32] {
-        let mut context = HMAC::new(hmac_key);
-
-        context.update(&self.key);
-        context.update(&self.value);
-        context.update([self.operation as u8]);
-
-        context.finalize()
-    }
-}
-
-pub fn read_wal<R: Read>(reader: &mut R, hmac_key: &[u8]) -> Result<Vec<WalRecordData>, WalError> {
+pub fn read_wal<R: Read>(reader: &mut R, hmac_key: &[u8]) -> Result<Vec<Vec<u8>>, WalError> {
     let mut records = Vec::new();
 
     loop {
@@ -167,9 +135,9 @@ pub fn read_wal<R: Read>(reader: &mut R, hmac_key: &[u8]) -> Result<Vec<WalRecor
 
         let record: WalRecord = bincode::deserialize(&payload)?;
 
-        if record.check_sum != record.data.generate_checksum(hmac_key) {
-            return Err(WalError::InvalidChecksum);
-        }
+        //if record.check_sum != record.data.generate_checksum(hmac_key) {
+        //   return Err(WalError::InvalidChecksum);
+        //}
 
         records.push(record.data);
     }
@@ -180,20 +148,24 @@ pub fn read_wal<R: Read>(reader: &mut R, hmac_key: &[u8]) -> Result<Vec<WalRecor
 pub fn write_wal<W: Write>(
     writer: &mut W,
     hmac_key: &[u8],
-    operation: WalOperation,
-    key: Vec<u8>,
-    value: Vec<u8>,
+    payload: Vec<u8>,
 ) -> Result<(), WalError> {
-    let wal_record_data = WalRecordData {
-        operation,
-        key,
-        value,
-    };
+    let version = 1;
+    let data = payload;
+    let lsn = 1;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+
+    let check_sum = [1; 32];
 
     let wal_record = WalRecord {
-        version: 1,
-        check_sum: wal_record_data.generate_checksum(hmac_key),
-        data: wal_record_data,
+        version,
+        lsn,
+        timestamp,
+        check_sum,
+        data,
     };
 
     let bytes = bincode::serialize(&wal_record)?;

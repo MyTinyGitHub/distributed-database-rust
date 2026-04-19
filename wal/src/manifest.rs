@@ -13,7 +13,7 @@ pub struct Manifest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WalManifest {
-    pub partiton: HashMap<String, WalPartition>,
+    pub partiton: HashMap<u8, WalPartition>,
     pub max_size: u32,
     pub hmac_key: [u8; 32],
 }
@@ -26,22 +26,22 @@ pub struct WalPartition {
 }
 
 impl Manifest {
-    pub fn pending_file_location(&self, partition_name: &str) -> Vec<String> {
-        let partition = &self.wal_manifest.partiton[partition_name];
+    pub fn pending_file_location(&self, service_id: u8) -> Vec<String> {
+        let partition = &self.wal_manifest.partiton[&service_id];
 
         let ack_file = partition.ack_idx / self.wal_manifest.max_size as u64;
         let last_file = partition.last_idx / self.wal_manifest.max_size as u64;
 
         (ack_file as u32..=last_file as u32)
             .into_iter()
-            .map(|idx| format!("{}_{}.wal", partition_name, idx))
+            .map(|idx| format!("{}_{}.wal", service_id, idx))
             .collect()
     }
 
-    pub fn wal_partition_init(&mut self, partition_name: &str) {
-        if self.wal_manifest.partiton.get(partition_name).is_none() {
+    pub fn wal_partition_init(&mut self, service_id: u8) {
+        if self.wal_manifest.partiton.get(&service_id).is_none() {
             self.wal_manifest.partiton.insert(
-                partition_name.to_string(),
+                service_id,
                 WalPartition {
                     file_idx: 0,
                     last_idx: 0,
@@ -53,8 +53,8 @@ impl Manifest {
         let _ = self.save();
     }
 
-    pub fn wal_maybe_increment(&mut self, partition_name: &str) {
-        let partition = self.wal_manifest.partiton.get_mut(partition_name).unwrap();
+    pub fn wal_maybe_increment(&mut self, service_id: u8) {
+        let partition = self.wal_manifest.partiton.get_mut(&service_id).unwrap();
 
         partition.last_idx += 1;
         partition.ack_idx += 1;
@@ -64,9 +64,9 @@ impl Manifest {
         }
     }
 
-    pub fn wal_filename(&mut self, partition_name: &str) -> String {
-        let partition = self.wal_manifest.partiton.get_mut(partition_name).unwrap();
-        format!("{}_{}.wal", partition_name, partition.file_idx)
+    pub fn wal_filename(&mut self, service_id: u8) -> String {
+        let partition = self.wal_manifest.partiton.get_mut(&service_id).unwrap();
+        format!("{}_{}.wal", service_id, partition.file_idx)
     }
 
     pub fn load(config: &DirectoriesConfig) -> Result<Self, ManifestError> {

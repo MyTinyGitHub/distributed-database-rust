@@ -2,7 +2,7 @@ use std::{error::Error, sync::Arc};
 use tokio::sync::RwLock;
 use tonic::{transport::Server, Request, Response};
 use tonic_reflection::server::Builder;
-use wal::{Config, Manifest, WalOperation, WalReader, WalWriter};
+use wal::{Config, Manifest, WalReader, WalWriter};
 
 use crate::proto::{
     wal_service_server::{WalService, WalServiceServer},
@@ -34,16 +34,9 @@ impl WalService for WalSrv {
 
         let request = request.get_ref();
 
-        let op =
-            WalOperation::try_from(request.operation).map_err(tonic::Status::invalid_argument)?;
-
-        self.writer
-            .write(
-                &request.partition_name,
-                op,
-                request.key.clone(),
-                request.value.clone(),
-            )
+        let op = self
+            .writer
+            .write(request.service_id as u8, request.payload.clone())
             .await
             .map_err(|_| tonic::Status::internal(""))?;
 
@@ -56,17 +49,13 @@ impl WalService for WalSrv {
     ) -> Result<Response<ReadResponse>, tonic::Status> {
         let result = self
             .reader
-            .read(&request.get_ref().partition_name)
+            .read(request.get_ref().service_id as u8)
             .await
             .map_err(|_| tonic::Status::internal(""))?;
 
         let result = result
             .iter()
-            .map(|r| Entry {
-                key: r.key.clone(),
-                value: r.value.clone(),
-                operation: r.operation as i32,
-            })
+            .map(|r| Entry { payload: r.clone() })
             .collect::<Vec<_>>();
 
         Ok(Response::new(ReadResponse { entries: result }))

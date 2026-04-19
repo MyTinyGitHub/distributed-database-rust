@@ -10,14 +10,12 @@ service WalService {
 message WriteResponse {}
 
 message ReadRequest {
-  string partition_name = 1;
+  uint32 service_id = 1;
 }
 
 message WriteRequest {
-  string partition_name = 1;
-  WalOperation operation = 2;
-  bytes key = 3;
-  bytes value = 4;
+  uint32 service_id = 1;
+  bytes payload = 2;
 }
 
 message ReadResponse {
@@ -25,13 +23,5 @@ message ReadResponse {
 }
 
 message Entry {
-  WalOperation operation = 1;
-  bytes key = 2;
-  bytes value = 3;
-}
-
-enum WalOperation {
-  WAL_OPERATION_UNSPECIFIED = 0;
-  WAL_OPERATION_PUT = 1;
-  WAL_OPERATION_DELETE = 2;
+  bytes payload = 2;
 }
