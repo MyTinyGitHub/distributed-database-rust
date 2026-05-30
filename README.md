@@ -6,13 +6,13 @@ A database engine built from scratch in Rust. Storage uses a B-tree index over a
 
 ## Implementation Status
 
-| Component | Status | Description |
-|-----------|--------|-------------|
-| `common` | ✅ Done | Shared types, errors, serialization, protobuf definitions |
-| `wal` | ✅ Done | Write-Ahead Log with HMAC checksums, manifest management |
-| `storage` | ✅ Done | gRPC partition node — heap file storage, B-tree index, manifest persistence |
-| `query` | 🔨 In Progress | gRPC test client for storage; SQL parser/planner not yet implemented |
-| `join` | 📋 Planned | Stub only; streaming join execution not yet implemented |
+| Component | Status         | Description                                                                 |
+| --------- | -------------- | --------------------------------------------------------------------------- |
+| `common`  | ✅ Done        | Shared types, errors, serialization, protobuf definitions                   |
+| `wal`     | ✅ Done        | Write-Ahead Log with HMAC checksums, manifest management                    |
+| `storage` | ✅ Done        | gRPC partition node — heap file storage, B-tree index, manifest persistence |
+| `query`   | 🔨 In Progress | gRPC test client for storage; SQL parser/planner not yet implemented        |
+| `join`    | 📋 Planned     | Stub only; streaming join execution not yet implemented                     |
 
 ---
 
@@ -138,13 +138,13 @@ cargo run -p storage
 
 ## ADRs
 
-| ID | Title |
-|----|-------|
-| ADR-001 | Shared-nothing architecture |
-| ADR-002 | Hash-based partitioning |
+| ID      | Title                           |
+| ------- | ------------------------------- |
+| ADR-001 | Shared-nothing architecture     |
+| ADR-002 | Hash-based partitioning         |
 | ADR-003 | Logical/physical planning split |
-| ADR-004 | WAL-first writes |
-| ADR-005 | Stateless join module |
+| ADR-004 | WAL-first writes                |
+| ADR-005 | Stateless join module           |
 | ADR-006 | Fail fast with circuit breakers |
 
 ---
