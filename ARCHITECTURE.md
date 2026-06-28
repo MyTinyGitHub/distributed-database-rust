@@ -6,7 +6,7 @@ This document describes the architecture of the distributed database engine. It 
 
 ## Overview
 
-A distributed database engine built from scratch in Rust. The system accepts SQL queries, plans and executes them across distributed partition nodes, and stores data using an LSM tree storage engine.
+A distributed database engine built from scratch in Rust. The system accepts query requests, plans/executes them across partition nodes, and stores data using a paged B+Tree index mapping to binary heap record files.
 
 The core design philosophy is **simplicity through strict boundaries**. Each layer does one thing, knows only about the layer directly below it, and has no knowledge of implementation details outside its own scope.
 
@@ -16,18 +16,11 @@ The core design philosophy is **simplicity through strict boundaries**. Each lay
 
 ```
 monorepo/
-├── gateway/              # SQL parser, lexer, CLI interface
-├── coordinator/          # Executor, planners, catalog, join module
-├── storage-engine/       # Partition node, WAL, MemTable, LSM Tree
-├── interpreter/          # Custom language interpreter (Monkey lang in Rust)
-└── .opencode/
-    └── agents/           # AI agent definitions
-        ├── AGENT.md
-        ├── AGENT-ARCHITECTURE.md
-        ├── AGENT-TEST.md
-        ├── AGENT-DOCS.md
-        ├── AGENT-DEVIL.md
-        └── AGENT-PERFORMANCE.md
+├── common/               # Shared protobuf definitions and structs
+├── wal/                  # Write-Ahead Log gRPC server
+├── storage/              # B+Tree & Heap File storage engine gRPC server
+├── query/                # Client queries and integration tests
+└── join/                 # Coordinator placeholder / join stub
 ```
 
 ---
@@ -35,85 +28,66 @@ monorepo/
 ## System Architecture
 
 ```
-Client / CLI
+Client / Query Test
      │
      ▼
 ┌─────────────┐
-│   gateway   │  SQL parsing, lexing, logical planning
+│    query    │  Client executor and gRPC query driver
 └─────────────┘
-     │ logical query plan
+     │ gRPC requests
      ▼
-┌─────────────────────────────────────────┐
-│              coordinator                │
-│  physical planner → executor → catalog  │
-│              join module                │
-└─────────────────────────────────────────┘
-     │ partition queries
-     ▼
-┌────────────┐  ┌────────────┐  ┌────────────┐
-│ partition  │  │ partition  │  │ partition  │
-│   node 1   │  │   node 2   │  │   node 3   │
-│ WAL        │  │ WAL        │  │ WAL        │
-│ MemTable   │  │ MemTable   │  │ MemTable   │
-│ SSTable    │  │ SSTable    │  │ SSTable    │
-└────────────┘  └────────────┘  └────────────┘
+┌─────────────┐  gRPC Writes   ┌────────────┐
+│   storage   │ ─────────────> │    wal     │
+│   service   │                │  service   │
+│  (B+Tree &  │                │  (Write-   │
+│   Heaps)    │                │   Ahead)   │
+└─────────────┘                └────────────┘
 ```
 
 ---
 
 ## Layers
 
-### Gateway
+### Client / Query Layer
 
-The entry point to the system. Accepts SQL queries via CLI or network interface.
+The frontend interface. Submits read/write requests to the partition nodes using the gRPC interface.
 
-**Responsibilities:**
-- Lexing and parsing SQL into an AST
-- Building a logical query plan
-- Validating queries against catalog metadata (table existence, column types, cardinality)
-
-**Strict boundaries — gateway never:**
-- References coordinator or storage-engine internals
-- Performs physical planning or execution
-- Knows about partition topology, node addresses, or storage formats
-
----
-
-### Coordinator
-
-Orchestrates query execution across partition nodes.
-
-**Responsibilities:**
-- Translating logical plans into physical execution plans
-- Fanning out queries to the relevant partition nodes
-- Owning the table catalog — schema, statistics, partition routing
-- Executing joins via the stateless join module
-- Caching query plans using DP-based optimisation
-- Handling partition node failures — fail fast, bounded retry
-
-**Strict boundaries — coordinator never:**
-- Knows about SSTable, WAL, or MemTable internals
-- Bypasses the catalog for metadata
-- Buffers full datasets for joins — always streams chunks
-- Returns partial results silently on partition failure
+**Strict boundaries — query layer never:**
+- Directly accesses storage-engine or WAL file internals.
+- Performs page manipulation or logs mutations directly.
 
 ---
 
 ### Storage Engine
 
-Fully autonomous partition nodes. Each node owns its data completely.
+Autonomous partition nodes using B+Tree indexing on binary Heap Files.
 
 **Responsibilities:**
-- Accepting read and write requests for its partition
-- Writing to WAL before any mutation
-- Buffering writes in MemTable, flushing to SSTable in batches
-- Background compaction of SSTables
-- Serving reads from MemTable and SSTable
+- Accepting read and write requests for its partition.
+- Writing to the Write-Ahead Log (WAL) service before applying any database modifications.
+- Appending record payloads sequentially to Heap Files (`heap.db`).
+- Keeping track of key-to-record-offset mapping using disk-based B+Tree pages (`.idx` files).
+- Reading index keys and record structures directly from disk files.
 
 **Strict boundaries — storage-engine never:**
-- References coordinator, catalog, or join module
-- Coordinates directly with other partition nodes
-- Acknowledges a write before WAL is persisted
+- Coordinates directly with other partition nodes.
+- Acknowledges a write before the WAL entry is flushed and durable.
+- Cross-references query coordination details or global schemas.
+
+---
+
+### WAL Service
+
+Provides write-ahead logging to guarantee transaction durability and crash-recovery capabilities.
+
+**Responsibilities:**
+- Appending incoming logs sequentially.
+- Serving historical WAL entries for replay and state recovery.
+- Re-playing and validating logs (using HMAC checksum verification).
+
+**Strict boundaries — WAL service never:**
+- Understands B+Tree page structure or heap data payload semantics.
+- Directly accesses storage databases or index files.
 
 ---
 
@@ -122,29 +96,17 @@ Fully autonomous partition nodes. Each node owns its data completely.
 ### Shared-Nothing Architecture
 Each partition node is fully autonomous. No shared memory, no shared storage between nodes. Enables independent scaling and failure isolation.
 
-### Hash-Based Partitioning
-Data is distributed by hash of the partition key. Chosen over range-based partitioning to prevent hotspots under uniform write load.
+### B+Tree Page Storage
+Instead of buffering and sorting writes dynamically in memory, writes are indexed on disk page files (`.idx`) organized as a B+Tree structure. Each node has a fixed size (4096 bytes) and points to child pages or to records in heap database files.
 
-### Logical / Physical Planning Split
-The logical planner works purely with abstract catalog metadata — it has no knowledge of physical storage. The physical planner translates the logical plan into concrete execution steps. This means the logical planner is completely storage-agnostic and can be tested independently.
-
-### Stateless Join Module
-The join module lives inside the coordinator and is completely stateless. It receives datasets and a join strategy decided by the planner, processes data in chunks, and streams results. It never loads full datasets into memory.
-
-### DP-Based Join Optimisation with Plan Caching
-The planner uses dynamic programming to find the optimal join order across multiple tables. Plans are cached and invalidated by the catalog when table statistics change significantly.
+### Sequential Heap Files
+Record data payloads are written sequentially to a heap file (`heap.db`). The offset and length of each record are stored in the B+Tree indexes, ensuring fast O(log N) lookup and appending.
 
 ### WAL-First Writes
-The WAL is always written before any mutation is applied to the MemTable. A write is never acknowledged until the WAL entry is durable. This ensures recovery is always possible from the WAL alone.
+The WAL is always written before any page mutation or heap insertion is done. A write is never acknowledged until the WAL entry is durable on disk. This ensures recovery is always possible from the WAL alone.
 
-### Fail Fast with Circuit Breakers
-Errors surface immediately. No silent failures, no indefinite retries. Bounded retry logic with circuit breakers on partition node communication. When a node is unresponsive, the circuit opens and requests fail fast.
-
-### Minimum Two Nodes
-At least two partition nodes exist at all times. When one node goes down the other can serve requests, providing a baseline level of availability without complex consensus protocols.
-
-### Namespace as Pure Router
-The coordinator's catalog acts as a pure routing layer — it knows partition topology but not storage internals. It is stateless enough to scale horizontally. Consistent hashing keeps routing consistent as namespace instances are added.
+### Fail Fast
+Errors surface immediately. No silent failures, no indefinite retries. When communication with the WAL service fails, the storage write is rejected immediately.
 
 ---
 
@@ -152,28 +114,19 @@ The coordinator's catalog acts as a pure routing layer — it knows partition to
 
 ### Write Path
 ```
-Client → Gateway (parse) → Coordinator (route) → Partition Node
-                                                  → WAL (persist first)
-                                                  → MemTable (buffer)
-                                                  → SSTable (flush in batch)
+Client Request → Storage Node (write)
+               → WAL Service (append & sync to log)
+               → Heap File (append record payload)
+               → B+Tree Index (traverse B+Tree pages and insert key mapping)
+               → Acknowledge success to Client
 ```
 
 ### Read Path
 ```
-Client → Gateway (parse + logical plan)
-       → Coordinator (physical plan + catalog lookup)
-       → Fan out to relevant partition nodes
-       → Partition nodes read from MemTable + SSTable
-       → Results streamed back to coordinator
-       → Join module assembles if needed (chunked streaming)
-       → Results returned to client
-```
-
-### Compaction (background)
-```
-Partition Node → periodic SSTable consolidation
-              → older SSTables merged into larger ones
-              → never blocks reads or writes
+Client Request → Storage Node (read)
+               → B+Tree Index (traverse index pages to find heap offset & size)
+               → Heap File (read buffer at offset)
+               → Return record payload to Client
 ```
 
 ---
@@ -182,28 +135,9 @@ Partition Node → periodic SSTable consolidation
 
 | Scenario | Behaviour |
 |---|---|
-| Partition node goes down | Fail fast, circuit breaker opens, retry on second node |
-| WAL write fails | Write rejected, MemTable not modified |
-| Partial partition failure mid-query | Error returned, no partial results |
-| Node restart | WAL replayed to recover MemTable state |
-| Catalog corruption | WAL for catalog replayed to reconstruct state |
-
----
-
-## Interpreter
-
-A separate project in the same monorepo. An interpreter for the Monkey language, built in Rust following "Writing an Interpreter in Go". Serves as both a learning project and the foundation for the database query language frontend.
-
-### Pipeline
-```
-Source code → Lexer → Tokens → Parser → AST → Evaluator → Result
-```
-
-### Boundaries
-- Each stage only knows about its own input and output types
-- AST is immutable after construction
-- Each stage has its own distinct error type
-- Evaluator never modifies AST nodes
+| WAL service goes down | Write rejected, storage node returns error |
+| Partial write failure | Transaction failed, disk pages remain unmodified |
+| Node restart / Crash | WAL replayed to reconstruct consistent B+Tree and heap state |
 
 ---
 
@@ -211,11 +145,8 @@ Source code → Lexer → Tokens → Parser → AST → Evaluator → Result
 
 These must never be violated:
 
-1. WAL is always written before any MemTable mutation
-2. Layer boundaries are never crossed — each layer imports only from the layer directly below
-3. Partition nodes never coordinate directly with each other
-4. Join module never buffers full datasets — always streams chunks
-5. Catalog is the single source of truth for partition topology and table statistics
-6. Plan cache is always invalidated when catalog statistics change
-7. No write is acknowledged before WAL is durable
-8. Partial query results are never returned silently
+1. WAL is always written and synced before any B+Tree index page or heap file mutation.
+2. Layer boundaries are respected — the storage engine accesses the WAL service only via the gRPC client interface.
+3. Partition nodes never coordinate directly with each other.
+4. No write is acknowledged before the WAL is durable.
+5. Partial query results are never returned silently.

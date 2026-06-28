@@ -8,12 +8,10 @@ Personal development guidelines for this monorepo. These rules exist to keep the
 
 These are non-negotiable. The architecture only works if boundaries are respected.
 
-**gateway** imports from: nothing in this monorepo (only std and external crates)
-**coordinator** imports from: `gateway` types (AST, logical plan) only
-**storage-engine** imports from: nothing in this monorepo (only std and external crates)
-**coordinator** communicates with **storage-engine** via network/IPC — never direct crate imports
-
-If a change requires crossing a layer boundary, the design needs to change — not the rule.
+- **common**: Contains shared protobuf definitions and basic structs. Does not import from other monorepo crates.
+- **wal**: The Write-Ahead Log microservice. Does not import from `storage`, `query`, or `join`.
+- **storage**: The storage engine microservice. Communicates with `wal` via gRPC client — never direct crate imports.
+- **query / join**: Frontend and coordinator components. Communicate with `storage` via gRPC client — never direct crate imports.
 
 ---
 
@@ -45,7 +43,7 @@ If a change requires crossing a layer boundary, the design needs to change — n
 - Edge cases are always tested — empty input, boundary values, failure paths
 - Property-based tests with `proptest` for any serialization, hashing, or data transformation
 - Integration tests for cross-layer interactions
-- Run tests before every commit: `just test`
+- Run tests before every commit: `cargo test`
 
 ---
 
@@ -53,26 +51,24 @@ If a change requires crossing a layer boundary, the design needs to change — n
 
 - One logical change per commit
 - Commit message format: `[component] short description`
-  - `[storage] add WAL write before memtable insert`
-  - `[coordinator] implement chunked streaming for join module`
-  - `[gateway] add SELECT with WHERE clause parsing`
+- Examples:
+  - `[storage] add WAL write before B+Tree page insert`
+  - `[join] implement coordinator placeholder stub`
+  - `[wal] implement checksum validation loop`
 - If a commit message needs "and" it should probably be two commits
 
 ---
 
-## Task Runner
+## Cargo Commands
 
-This monorepo uses `just` as the task runner. Common commands:
+This monorepo uses standard cargo commands for workspace development:
 
 ```bash
-just test              # run all tests
-just test-gateway      # run gateway tests only
-just test-coordinator  # run coordinator tests only
-just test-storage      # run storage engine tests only
-just lint              # run clippy
-just fmt               # run rustfmt
-just doc               # generate and open docs
-just check             # fmt + lint + test in one go
+cargo check             # check code compilation
+cargo test              # run all unit and integration tests
+cargo test -p storage   # run storage engine tests only
+cargo clippy            # run lints
+cargo fmt               # format code
 ```
 
 ---
@@ -82,29 +78,13 @@ just check             # fmt + lint + test in one go
 1. Create a new folder at the monorepo root
 2. Add a `README.md` explaining what it does and what it does NOT do
 3. Add a `//!` module comment to `lib.rs` or `main.rs`
-4. Add it to the context table in `.opencode/agents/AGENT.md`
-5. Update `ARCHITECTURE.md` with the new component
-6. Add a `just test-[component]` task
-
----
-
-## AI Agents
-
-Agents live in `.opencode/agents/`. Use them via `@agent-name` in OpenCode.
-
-| Agent | Use for |
-|---|---|
-| `@AGENT` | Code review |
-| `@AGENT-ARCHITECTURE` | Checking layer boundary violations |
-| `@AGENT-TEST` | Generating tests for new code |
-| `@AGENT-DOCS` | Generating doc comments and READMEs |
-| `@AGENT-DEVIL` | Stress testing a design decision |
-| `@AGENT-PERFORMANCE` | Performance review and optimisation |
+4. Update `ARCHITECTURE.md` with the new component
 
 ---
 
 ## Sync to GitHub
 
-This monorepo is hosted on a private Gitea instance and synced to public GitHub automatically via `just sync`. The sync pushes to the public repo so the GitHub profile stays up to date.
+This monorepo is hosted on a private Gitea instance and synced to public GitHub automatically. The sync pushes to the public repo so the GitHub profile stays up to date.
 
 Make sure any work intended to be public is in a clean, documented state before syncing.
+
